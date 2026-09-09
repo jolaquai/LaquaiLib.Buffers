@@ -1,0 +1,9 @@
+<Solution>
+  <Folder Name="/Solution Items/">
+    <File Path=".gitignore" />
+    <File Path="LICENSE" />
+    <File Path="README.md" />
+  </Folder>
+  <Project Path="LaquaiLib.Buffers/LaquaiLib.Buffers.csproj" />
+  <Project Path="LaquaiLib.Buffers.Tests/LaquaiLib.Buffers.Tests.csproj" />
+</Solution>
