@@ -36,6 +36,10 @@
       <None Include="..\LICENSE;..\README.md" Pack="True" PackagePath="/" />
 
       <InternalsVisibleTo Include="$(AssemblyName).Tests" />
+
+      <Using Include="System.Diagnostics" />
+      <Using Include="System.Runtime.CompilerServices" />
+      <Using Include="System.Runtime.InteropServices" />
   </ItemGroup>
 
 </Project>
