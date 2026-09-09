@@ -1,4 +1,5 @@
 ﻿using System.Buffers;
+using System.Runtime.CompilerServices;
 
 namespace LaquaiLib.Wrappers;
 
@@ -41,12 +42,13 @@ public struct RentedArray<T>(T[] array, int offset = 0, int length = -1, ArrayPo
 
     /// <summary>
     /// Disposes the <see cref="RentedArray{T}"/> by returning the underlying array to the <see cref="ArrayPool{T}"/>.
+    /// The array is cleared if <see cref="Clear"/> is <see langword="true"/>, or unconditionally if <typeparamref name="T"/> is or contains a reference, so a pooled reference-typed array never keeps otherwise-dead objects alive.
     /// </summary>
     public void Dispose()
     {
         if (Array is T[] array)
         {
-            ArrayPool.Return(array, Clear);
+            ArrayPool.Return(array, Clear || RuntimeHelpers.IsReferenceOrContainsReferences<T>());
             Array = null;
         }
     }
