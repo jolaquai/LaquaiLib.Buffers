@@ -1,17 +1,17 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <OutputType>Library</OutputType>
-    <TargetFrameworks>net8.0;net9.0;net10.0</TargetFrameworks>
+    <TargetFrameworks>netstandard2.0;net10.0</TargetFrameworks>
     <Nullable>disable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
 
   <PropertyGroup>
     <RootNamespace>LaquaiLib</RootNamespace>
 
-    <LangVersion>preview</LangVersion>
-    <EnablePreviewFeatures>True</EnablePreviewFeatures>
+    <LangVersion>latest</LangVersion>
     <RollForward>LatestMajor</RollForward>
     <DebugType>portable</DebugType>
     <DebugSymbols>True</DebugSymbols>
@@ -40,6 +40,12 @@
       <Using Include="System.Diagnostics" />
       <Using Include="System.Runtime.CompilerServices" />
       <Using Include="System.Runtime.InteropServices" />
+      <Using Include="LaquaiLib.Buffers" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(TargetFramework)' == 'netstandard2.0'">
+      <PackageReference Include="System.Memory" Version="4.6.3" />
+      <PackageReference Include="PolySharp" Version="1.16.0" />
   </ItemGroup>
 
 </Project>

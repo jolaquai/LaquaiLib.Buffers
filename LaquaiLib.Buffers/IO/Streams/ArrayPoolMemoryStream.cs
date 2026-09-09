@@ -56,7 +56,7 @@ public sealed class ArrayPoolMemoryStream : Stream, IBufferWriter<byte>
         const int SharedPoolMaxBucket = 1024 * 1024;
         _maxSegmentSize = disallowLohRenting
             ? 65536
-            : pool is null ? int.Max(SharedPoolMaxBucket, minimumSegmentSize) : Array.MaxLength;
+            : pool is null ? Math.Max(SharedPoolMaxBucket, minimumSegmentSize) : Array.MaxLength;
         ArgumentOutOfRangeException.ThrowIfGreaterThan(minimumSegmentSize, _maxSegmentSize, nameof(minimumSegmentSize));
 
         _minimumSegmentSize = minimumSegmentSize;
@@ -119,7 +119,7 @@ public sealed class ArrayPoolMemoryStream : Stream, IBufferWriter<byte>
     {
         while (capacity < required)
         {
-            var arr = _pool.Rent((int)long.Min(long.Max(required - capacity, _minimumSegmentSize), _maxSegmentSize));
+            var arr = _pool.Rent((int)Math.Min(Math.Max(required - capacity, _minimumSegmentSize), _maxSegmentSize));
             _segments.Add(BufferSegment<byte>.Full(arr));
             capacity += arr.Length;
         }
@@ -132,7 +132,7 @@ public sealed class ArrayPoolMemoryStream : Stream, IBufferWriter<byte>
         while (count > 0)
         {
             var current = segments[seg];
-            var take = (int)long.Min(current.Length - off, count);
+            var take = (int)Math.Min(current.Length - off, count);
             current.Array.AsSpan(off, take).ZeroMemory();
             count -= take;
             off += take;
@@ -147,12 +147,19 @@ public sealed class ArrayPoolMemoryStream : Stream, IBufferWriter<byte>
     /// <inheritdoc/>
     public override int Read(byte[] buffer, int offset, int count)
     {
+#if !NETCOREAPP
+        StreamExtensions.
+#endif
         ValidateBufferArguments(buffer, offset, count);
         ThrowIfDisposed();
         return ReadCore(buffer.AsSpan(offset, count));
     }
     /// <inheritdoc/>
-    public override int Read(Span<byte> buffer)
+    public
+#if NETCOREAPP
+    override
+#endif
+    int Read(Span<byte> buffer)
     {
         ThrowIfDisposed();
         return ReadCore(buffer);
@@ -164,7 +171,7 @@ public sealed class ArrayPoolMemoryStream : Stream, IBufferWriter<byte>
         if (available <= 0 || buffer.IsEmpty)
             return 0;
 
-        var count = (int)long.Min(buffer.Length, available);
+        var count = (int)Math.Min(buffer.Length, available);
         var segments = SegmentsSpan();
         var (seg, off) = Locate(position);
 
@@ -172,7 +179,7 @@ public sealed class ArrayPoolMemoryStream : Stream, IBufferWriter<byte>
         while (copied < count)
         {
             var current = segments[seg];
-            var take = int.Min(current.Length - off, count - copied);
+            var take = Math.Min(current.Length - off, count - copied);
             current.Array.AsSpan(off, take).CopyTo(buffer[copied..]);
             copied += take;
             off += take;
@@ -189,6 +196,9 @@ public sealed class ArrayPoolMemoryStream : Stream, IBufferWriter<byte>
     /// <inheritdoc/>
     public override Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken)
     {
+#if !NETCOREAPP
+        StreamExtensions.
+#endif
         ValidateBufferArguments(buffer, offset, count);
         ThrowIfDisposed();
 
@@ -198,6 +208,7 @@ public sealed class ArrayPoolMemoryStream : Stream, IBufferWriter<byte>
         var read = ReadCore(buffer.AsSpan(offset, count));
         return _lastReadTask.Get(read);
     }
+#if NETCOREAPP
     /// <inheritdoc/>
     public override ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
     {
@@ -206,6 +217,16 @@ public sealed class ArrayPoolMemoryStream : Stream, IBufferWriter<byte>
             ? ValueTask.FromCanceled<int>(cancellationToken)
             : new ValueTask<int>(ReadCore(buffer.Span));
     }
+#else
+    /// <inheritdoc/>
+    public Task<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
+    {
+        ThrowIfDisposed();
+        return cancellationToken.IsCancellationRequested
+            ? Task.FromCanceled<int>(cancellationToken)
+            : Task.FromResult(ReadCore(buffer.Span));
+    }
+#endif
     /// <inheritdoc/>
     public override int ReadByte()
     {
@@ -238,12 +259,19 @@ public sealed class ArrayPoolMemoryStream : Stream, IBufferWriter<byte>
     /// <inheritdoc/>
     public override void Write(byte[] buffer, int offset, int count)
     {
+#if !NETCOREAPP
+        StreamExtensions.
+#endif
         ValidateBufferArguments(buffer, offset, count);
         ThrowIfDisposed();
         WriteCore(buffer.AsSpan(offset, count));
     }
     /// <inheritdoc/>
-    public override void Write(ReadOnlySpan<byte> buffer)
+    public
+#if NETCOREAPP
+    override
+#endif
+    void Write(ReadOnlySpan<byte> buffer)
     {
         ThrowIfDisposed();
         WriteCore(buffer);
@@ -276,7 +304,7 @@ public sealed class ArrayPoolMemoryStream : Stream, IBufferWriter<byte>
         while (written < buffer.Length)
         {
             var current = segments[seg];
-            var put = int.Min(current.Length - off, buffer.Length - written);
+            var put = Math.Min(current.Length - off, buffer.Length - written);
             buffer.Slice(written, put).CopyTo(current.Array.AsSpan(off));
             written += put;
             off += put;
@@ -294,6 +322,9 @@ public sealed class ArrayPoolMemoryStream : Stream, IBufferWriter<byte>
     /// <inheritdoc/>
     public override Task WriteAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken)
     {
+#if !NETCOREAPP
+        StreamExtensions.
+#endif
         ValidateBufferArguments(buffer, offset, count);
         ThrowIfDisposed();
 
@@ -303,6 +334,7 @@ public sealed class ArrayPoolMemoryStream : Stream, IBufferWriter<byte>
         WriteCore(buffer.AsSpan(offset, count));
         return Task.CompletedTask;
     }
+#if NETCOREAPP
     /// <inheritdoc/>
     public override ValueTask WriteAsync(ReadOnlyMemory<byte> buffer, CancellationToken cancellationToken = default)
     {
@@ -314,11 +346,29 @@ public sealed class ArrayPoolMemoryStream : Stream, IBufferWriter<byte>
         WriteCore(buffer.Span);
         return ValueTask.CompletedTask;
     }
+#else
+    /// <inheritdoc/>
+    public Task WriteAsync(ReadOnlyMemory<byte> buffer, CancellationToken cancellationToken = default)
+    {
+        ThrowIfDisposed();
+
+        if (cancellationToken.IsCancellationRequested)
+            return Task.FromCanceled(cancellationToken);
+
+        WriteCore(buffer.Span);
+        return Task.CompletedTask;
+    }
+#endif
     /// <inheritdoc/>
     public override void WriteByte(byte value)
     {
         ThrowIfDisposed();
+#if NETCOREAPP
         WriteCore(new ReadOnlySpan<byte>(in value));
+#else
+        scoped ReadOnlySpan<byte> span = stackalloc byte[1] { value };
+        WriteCore(span);
+#endif
     }
     /// <summary>
     /// Begins an asynchronous write operation.
@@ -348,7 +398,13 @@ public sealed class ArrayPoolMemoryStream : Stream, IBufferWriter<byte>
         throw new NotSupportedException("The destination stream does not support writing.");
     }
     /// <inheritdoc/>
-    public override void CopyTo(Stream destination, int bufferSize)
+    public
+#if NETCOREAPP
+    override
+#else
+    new
+#endif
+    void CopyTo(Stream destination, int bufferSize)
     {
         ValidateDestination(destination);
         ThrowIfDisposed();
@@ -361,7 +417,7 @@ public sealed class ArrayPoolMemoryStream : Stream, IBufferWriter<byte>
         while (remaining > 0)
         {
             var current = _segments[seg];
-            var take = (int)long.Min(current.Length - off, remaining);
+            var take = (int)Math.Min(current.Length - off, remaining);
             destination.Write(current.Array, off, take);
             remaining -= take;
             off += take;
@@ -373,6 +429,12 @@ public sealed class ArrayPoolMemoryStream : Stream, IBufferWriter<byte>
         }
         position = length;
     }
+    /// <inheritdoc/>
+    public
+#if NETCOREAPP
+    new
+#endif
+    Task CopyToAsync(Stream destination, CancellationToken cancellationToken = default) => CopyToAsync(destination, 81920, cancellationToken);
     /// <inheritdoc/>
     public override Task CopyToAsync(Stream destination, int bufferSize, CancellationToken cancellationToken)
     {
@@ -403,8 +465,8 @@ public sealed class ArrayPoolMemoryStream : Stream, IBufferWriter<byte>
                 // unlike every other path, this one yields mid-walk, so a dispose can land between iterations; bail promptly rather than copying from a stream that is gone
                 ThrowIfDisposed();
                 var current = segments[seg];
-                var take = (int)long.Min(current.Length - off, remaining);
-                await destination.WriteAsync(current.Array.AsMemory(off, take), cancellationToken).ConfigureAwait(false);
+                var take = (int)Math.Min(current.Length - off, remaining);
+                await destination.WriteAsync(current.Array, off, take, cancellationToken).ConfigureAwait(false);
                 remaining -= take;
                 off += take;
                 if (off == current.Length)
@@ -501,12 +563,14 @@ public sealed class ArrayPoolMemoryStream : Stream, IBufferWriter<byte>
         }
         base.Dispose(disposing);
     }
+#if NETCOREAPP
     /// <inheritdoc/>
     public override ValueTask DisposeAsync()
     {
         Dispose(true);
         return default;
     }
+#endif
 
     /// <summary>
     /// Gets a <see cref="ReadOnlySequence{T}"/> over the memory that has been written so far.
@@ -524,7 +588,7 @@ public sealed class ArrayPoolMemoryStream : Stream, IBufferWriter<byte>
         long running = 0;
         for (var i = 0; running < length; i++)
         {
-            var take = (int)long.Min(_segments[i].Length, length - running);
+            var take = (int)Math.Min(_segments[i].Length, length - running);
             var seg = new SequenceSegment(_segments[i].Array.AsMemory(0, take), running);
             running += take;
             if (prev is null)
@@ -552,7 +616,12 @@ public sealed class ArrayPoolMemoryStream : Stream, IBufferWriter<byte>
             throw new OutOfMemoryException("A contiguous array of the requested size cannot be allocated.");
 
         // every byte is overwritten by the copy below, so the runtime's zeroing pass would be wasted work
-        var result = GC.AllocateUninitializedArray<byte>((int)length);
+        var result =
+#if NETCOREAPP
+        GC.AllocateUninitializedArray<byte>((int)length);
+#else
+        new byte[(int)length];
+#endif
         CopyToCore(result);
         return result;
     }
@@ -581,7 +650,7 @@ public sealed class ArrayPoolMemoryStream : Stream, IBufferWriter<byte>
         for (var i = 0; remaining > 0; i++)
         {
             var current = segments[i];
-            var take = (int)long.Min(current.Length, remaining);
+            var take = (int)Math.Min(current.Length, remaining);
             current.Array.AsSpan(0, take).CopyTo(destination);
             destination = destination[take..];
             remaining -= take;
@@ -598,10 +667,14 @@ public sealed class ArrayPoolMemoryStream : Stream, IBufferWriter<byte>
     }
 
     #region IBufferWriter<byte>
+#if NETCOREAPP
     /// <inheritdoc/>
     /// <remarks>
     /// The write head is <see cref="Position"/>, so this behaves exactly as if <paramref name="count"/> bytes had been written through <see cref="Write(ReadOnlySpan{byte})"/>.
     /// </remarks>
+#else
+    /// <inheritdoc/>
+#endif
     public void Advance(int count)
     {
         ArgumentOutOfRangeException.ThrowIfNegative(count);
@@ -702,7 +775,7 @@ public sealed class ArrayPoolMemoryStream : Stream, IBufferWriter<byte>
             _segments.RemoveRange(head, _segments.Count - head);
 
         // _minimumSegmentSize is capped at _maxSegmentSize by the constructor, so this exceeds the cap only when the caller asks for more than a capped segment could ever hold
-        var arr = _pool.Rent(int.Max(sizeHint, _minimumSegmentSize));
+        var arr = _pool.Rent(Math.Max(sizeHint, _minimumSegmentSize));
         var appended = BufferSegment<byte>.Full(arr);
         _segments.Add(appended);
         capacity += appended.Length;

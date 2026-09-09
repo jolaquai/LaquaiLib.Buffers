@@ -1,6 +1,8 @@
 using System.Buffers;
 
 using LaquaiLib.IO.Streams;
+using LaquaiLib.Buffers;
+using LaquaiLib.Buffers.Tests;
 
 namespace LaquaiLib.Buffers.Tests.IO.Streams;
 
@@ -2048,7 +2050,7 @@ public class ArrayPoolMemoryStreamTests
     {
         var stream = new ArrayPoolMemoryStream(chunk, pool: pool);
         for (var i = 0; i < data.Length; i += chunk)
-            stream.Write(data, i, int.Min(chunk, data.Length - i));
+            stream.Write(data, i, Math.Min(chunk, data.Length - i));
         return stream;
     }
 
@@ -2134,7 +2136,7 @@ public class ArrayPoolMemoryStreamTests
 
         var sequence = stream.AsReadOnlySequence();
         Assert.Equal(32L, sequence.Length);
-        Assert.Equal(data[..32], sequence.ToArray());
+        Assert.Equal(data.AsSpan()[..32].ToArray(), sequence.ToArray());
         foreach (var segment in sequence)
             Assert.False(segment.IsEmpty);
     }
@@ -2165,9 +2167,10 @@ public class ArrayPoolMemoryStreamTests
         using var stream = SegmentedStream(new TrackingArrayPool(), data, 16);
         var sequence = stream.AsReadOnlySequence();
         for (var i = 0; i <= data.Length; i++)
-            Assert.Equal(data[i..], sequence.Slice(i).ToArray());
+            Assert.Equal(data.AsSpan()[i..].ToArray(), sequence.Slice(i).ToArray());
     }
 
+#if NETCOREAPP
     [Fact]
     public void AsReadOnlySequenceSupportsSequenceReader()
     {
@@ -2178,6 +2181,7 @@ public class ArrayPoolMemoryStreamTests
         Assert.True(reader.TryCopyTo(actual));
         Assert.Equal(data, actual);
     }
+#endif
 
     [Fact]
     public void AsReadOnlySequenceIgnoresPositionAndLeavesItAlone()
@@ -2207,7 +2211,7 @@ public class ArrayPoolMemoryStreamTests
         var data = Sequence(48);
         using var stream = SegmentedStream(new TrackingArrayPool(0xAB), data, 16);
         stream.SetLength(20);
-        Assert.Equal(data[..20], stream.AsReadOnlySequence().ToArray());
+        Assert.Equal(data.AsSpan()[..20].ToArray(), stream.AsReadOnlySequence().ToArray());
     }
 
     [Fact]
@@ -2230,8 +2234,8 @@ public class ArrayPoolMemoryStreamTests
 
         var actual = stream.AsReadOnlySequence().ToArray();
         Assert.Equal(40, actual.Length);
-        Assert.Equal(data, actual[..8]);
-        Assert.All(actual[8..], b => Assert.Equal(0, b));
+        Assert.Equal(data, actual.AsSpan()[..8].ToArray());
+        Assert.All(actual.AsSpan()[8..].ToArray(), b => Assert.Equal(0, b));
     }
 
     [Fact]
@@ -2262,7 +2266,7 @@ public class ArrayPoolMemoryStreamTests
         using var stream = SegmentedStream(new TrackingArrayPool(), data, 16);
         stream.SetLength(20);
         stream.TrimExcess();
-        Assert.Equal(data[..20], stream.AsReadOnlySequence().ToArray());
+        Assert.Equal(data.AsSpan()[..20].ToArray(), stream.AsReadOnlySequence().ToArray());
     }
 
     [Fact]
@@ -2273,7 +2277,7 @@ public class ArrayPoolMemoryStreamTests
         stream.SetLength(32);
         stream.TrimExcess();
         Assert.Equal(stream.Length, stream.Capacity);
-        Assert.Equal(data[..32], stream.AsReadOnlySequence().ToArray());
+        Assert.Equal(data.AsSpan()[..32].ToArray(), stream.AsReadOnlySequence().ToArray());
     }
 
     [Fact]
@@ -2282,7 +2286,7 @@ public class ArrayPoolMemoryStreamTests
         var data = Sequence(10000);
         using var stream = new ArrayPoolMemoryStream(256);
         for (var i = 0; i < data.Length; i += 256)
-            stream.Write(data, i, int.Min(256, data.Length - i));
+            stream.Write(data, i, Math.Min(256, data.Length - i));
         Assert.Equal(data, stream.AsReadOnlySequence().ToArray());
     }
 
@@ -2338,7 +2342,7 @@ public class ArrayPoolMemoryStreamTests
         var data = Sequence(48);
         using var stream = SegmentedStream(new TrackingArrayPool(0xEE), data, 16);
         stream.SetLength(20);
-        Assert.Equal(data[..20], stream.ToArray());
+        Assert.Equal(data.AsSpan()[..20].ToArray(), stream.ToArray());
     }
 
     [Fact]
@@ -2351,8 +2355,8 @@ public class ArrayPoolMemoryStreamTests
 
         var actual = stream.ToArray();
         Assert.Equal(40, actual.Length);
-        Assert.Equal(data, actual[..8]);
-        Assert.All(actual[8..], b => Assert.Equal(0, b));
+        Assert.Equal(data, actual.AsSpan()[..8].ToArray());
+        Assert.All(actual.AsSpan()[8..].ToArray(), b => Assert.Equal(0, b));
     }
 
     [Fact]
@@ -2403,8 +2407,8 @@ public class ArrayPoolMemoryStreamTests
         actual.AsSpan().Fill(0xAB);
         stream.CopyTo(actual);
 
-        Assert.Equal(data, actual[..20]);
-        Assert.All(actual[20..], b => Assert.Equal(0xAB, b));
+        Assert.Equal(data, actual.AsSpan()[..20].ToArray());
+        Assert.All(actual.AsSpan()[20..].ToArray(), b => Assert.Equal(0xAB, b));
     }
 
     [Fact]
@@ -2421,14 +2425,14 @@ public class ArrayPoolMemoryStreamTests
     public void CopyToSpanRejectsAnEmptyDestinationForANonEmptyStream()
     {
         using var stream = StreamWith(1, 2, 3);
-        Assert.Throws<ArgumentException>(() => stream.CopyTo(Span<byte>.Empty));
+        Assert.Throws<ArgumentException>(() => stream.CopyTo([]));
     }
 
     [Fact]
     public void CopyToSpanOfEmptyStreamIntoEmptyDestinationIsANoOp()
     {
         using var stream = new ArrayPoolMemoryStream();
-        stream.CopyTo(Span<byte>.Empty);
+        stream.CopyTo([]);
         Assert.Equal(0L, stream.Length);
     }
 
@@ -2461,7 +2465,7 @@ public class ArrayPoolMemoryStreamTests
         stream.SetLength(20);
         var actual = new byte[20];
         stream.CopyTo(actual);
-        Assert.Equal(data[..20], actual);
+        Assert.Equal(data.AsSpan()[..20].ToArray(), actual);
     }
 
     [Fact]
@@ -2474,8 +2478,8 @@ public class ArrayPoolMemoryStreamTests
 
         var actual = new byte[40];
         stream.CopyTo(actual);
-        Assert.Equal(data, actual[..8]);
-        Assert.All(actual[8..], b => Assert.Equal(0, b));
+        Assert.Equal(data, actual.AsSpan()[..8].ToArray());
+        Assert.All(actual.AsSpan()[8..].ToArray(), b => Assert.Equal(0, b));
     }
 
     // segments ended early by the buffer-writer append path must not leak their abandoned tails into the copy
@@ -2622,8 +2626,8 @@ public class ArrayPoolMemoryStreamTests
         stream.Position = 0;
         var buffer = new byte[12];
         Assert.Equal(12, stream.Read(buffer, 0, 12));
-        Assert.Equal(data, buffer[..4]);
-        Assert.All(buffer[4..], b => Assert.Equal(0, b));
+        Assert.Equal(data, buffer.AsSpan()[..4].ToArray());
+        Assert.All(buffer.AsSpan()[4..].ToArray(), b => Assert.Equal(0, b));
     }
 
     [Fact]
@@ -2666,8 +2670,8 @@ public class ArrayPoolMemoryStreamTests
         stream.Position = 0;
         var buffer = new byte[46];
         Assert.Equal(46, stream.Read(buffer, 0, 46));
-        Assert.Equal(data[..20], buffer[..20]);
-        Assert.All(buffer[20..], b => Assert.Equal(0, b));
+        Assert.Equal(data.AsSpan()[..20].ToArray(), buffer.AsSpan()[..20].ToArray());
+        Assert.All(buffer.AsSpan()[20..].ToArray(), b => Assert.Equal(0, b));
     }
 
     [Fact]
@@ -2700,7 +2704,7 @@ public class ArrayPoolMemoryStreamTests
         using var stream = new ArrayPoolMemoryStream(16, pool: pool);
         stream.Write(Sequence(4), 0, 4);
         stream.Position = 9;
-        stream.Write(ReadOnlySpan<byte>.Empty);
+        stream.Write([]);
 
         Assert.Equal(9L, stream.Length);
     }
@@ -2729,8 +2733,8 @@ public class ArrayPoolMemoryStreamTests
 
         var actual = stream.AsReadOnlySequence().ToArray();
         Assert.Equal(12, actual.Length);
-        Assert.Equal(data, actual[..4]);
-        Assert.All(actual[4..], b => Assert.Equal(0, b));
+        Assert.Equal(data, actual.AsSpan()[..4].ToArray());
+        Assert.All(actual.AsSpan()[4..].ToArray(), b => Assert.Equal(0, b));
     }
 
     [Fact]

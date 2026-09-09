@@ -40,7 +40,7 @@ public static class ArrayPoolExtensions
         /// // array.GetType() == typeof(byte[])
         /// </code>
         /// </remarks>
-        public TSource[] Rent<TAs>(int minimumSize, out Span<TAs> span) where TAs : unmanaged
+        public unsafe TSource[] Rent<TAs>(int minimumSize, out Span<TAs> span) where TAs : unmanaged
         {
             if (minimumSize < 0)
                 throw new ArgumentOutOfRangeException(nameof(minimumSize), "The requested size must be non-negative.");
