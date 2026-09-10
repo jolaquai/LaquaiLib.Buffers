@@ -15,7 +15,8 @@ concurrency:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    # net48 needs the .NET Framework 4.8 targeting pack/runtime, which only the Windows image carries.
+    runs-on: windows-latest
 
     steps:
       - name: Checkout
@@ -32,8 +33,23 @@ jobs:
       - name: Build
         run: dotnet build --no-restore -c Release
 
+      # xunit.v3 on Microsoft.Testing.Platform emits a self-contained runner, so the exes are invoked
+      # directly instead of going through `dotnet test`/`dotnet <dll>`. That skips the VSTest bridge
+      # entirely, which the .NET 10 SDK no longer supports (even at the solution level with
+      # TestingPlatformDotnetTestSupport set), and makes each runner's own exit code the step's result.
       - name: Test
-        run: dotnet test --no-build -c Release --verbosity normal
+        shell: pwsh
+        run: |
+          $exes = @(
+            "LaquaiLib.Buffers.Tests/bin/Release/net48/LaquaiLib.Buffers.Tests.exe",
+            "LaquaiLib.Buffers.Tests/bin/Release/net10.0/LaquaiLib.Buffers.Tests.exe"
+          )
+          foreach ($exe in $exes) {
+            if (-not (Test-Path $exe)) { throw "Test runner not found at $exe" }
+            Write-Host "Running $exe"
+            & $exe
+            if ($LASTEXITCODE -ne 0) { throw "Tests failed with exit code $LASTEXITCODE ($exe)." }
+          }
 
   # Release depends on the tests, not just co-exists alongside them - nothing
   # ships if they don't pass.

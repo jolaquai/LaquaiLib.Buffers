@@ -10,6 +10,10 @@
     <IsPackable>false</IsPackable>
 
     <RootNamespace>LaquaiLib.Buffers.Tests</RootNamespace>
+
+    <!-- xunit.v3 runs on Microsoft.Testing.Platform (no VSTest adapter referenced), and the .NET 10 SDK's
+         'dotnet test' refuses to bridge an MTP project through VSTest unless this opts it in. -->
+    <TestingPlatformDotnetTestSupport>true</TestingPlatformDotnetTestSupport>
   </PropertyGroup>
 
   <ItemGroup>
