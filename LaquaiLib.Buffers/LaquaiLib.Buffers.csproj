@@ -19,14 +19,16 @@
     <GenerateDocumentationFile>True</GenerateDocumentationFile>
     <SymbolPackageFormat>snupkg</SymbolPackageFormat>
     <IncludeSymbols>True</IncludeSymbols>
-    <Version>1.0.0</Version>
+    <Version>0.1.0</Version>
 
     <PackageId>$(AssemblyName)</PackageId>
     <PackageVersion>$(Version)</PackageVersion>
+    <Authors>jolaquai</Authors>
     <PackageDescription>Provides pooled buffer primitives: an ArrayPool-backed Stream/IBufferWriter, a disposable rented-array wrapper, and small ArrayPool extensions.</PackageDescription>
     <PackageRequireLicenseAcceptance>False</PackageRequireLicenseAcceptance>
     <PackageLicenseFile>LICENSE</PackageLicenseFile>
     <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageTags>buffers;arraypool;stream;ibufferwriter;pooled</PackageTags>
 
     <RepositoryType>git</RepositoryType>
     <RepositoryUrl>https://github.com/jolaquai/$(AssemblyName)</RepositoryUrl>
