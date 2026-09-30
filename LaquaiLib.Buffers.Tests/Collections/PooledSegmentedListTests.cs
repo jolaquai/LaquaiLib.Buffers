@@ -9,7 +9,7 @@ public class PooledSegmentedListTests
     private sealed class TrackingPool<T>(int extraLength = 0, T fill = default) : ArrayPool<T>
     {
         public readonly List<int> Requests = [];
-        public readonly List<(T[] Array, bool Clear)> Returns = [];
+        public readonly List<(T[] Array, bool Cleared)> Returns = [];
         public readonly HashSet<T[]> Outstanding = [];
 
         public override T[] Rent(int minimumLength)
@@ -24,9 +24,7 @@ public class PooledSegmentedListTests
         public override void Return(T[] array, bool clearArray = false)
         {
             Assert.True(Outstanding.Remove(array), "Returned an array that was not rented or was already returned.");
-            Returns.Add((array, clearArray));
-            if (clearArray)
-                Array.Clear(array);
+            Returns.Add((array, Array.TrueForAll(array, static x => EqualityComparer<T>.Default.Equals(x, default))));
         }
     }
 
@@ -119,7 +117,7 @@ public class PooledSegmentedListTests
 
         list.TrimExcess();
         Assert.Equal(6, pool.Returns.Count);
-        Assert.All(pool.Returns, static r => Assert.True(r.Clear));
+        Assert.All(pool.Returns, static r => Assert.True(r.Cleared));
         Assert.Equal(12, list.Capacity);
         Assert.Equal(Enumerable.Range(0, 10).Select(static i => i.ToString()), list);
     }
@@ -134,7 +132,7 @@ public class PooledSegmentedListTests
 
         list.Dispose();
         Assert.Empty(pool.Outstanding);
-        Assert.All(pool.Returns, static r => Assert.True(r.Clear));
+        Assert.All(pool.Returns, static r => Assert.True(r.Cleared));
         Assert.Empty(list);
         Assert.Equal(0, list.Capacity);
         Assert.Equal(0, list.SegmentCount);
@@ -152,7 +150,28 @@ public class PooledSegmentedListTests
         list.AddRange(Enumerable.Range(0, 30).ToArray());
         list.Dispose();
         Assert.NotEmpty(pool.Returns);
-        Assert.All(pool.Returns, static r => Assert.False(r.Clear));
+        Assert.All(pool.Returns, static r => Assert.False(r.Cleared));
+    }
+
+    [Fact]
+    public void ClearOnReturnClearsPureValueTypeSegments()
+    {
+        var pool = new TrackingPool<int>();
+        using (var list = new PooledSegmentedList<int>(2, 4, pool: pool, clearOnReturn: true))
+        {
+            list.AddRange(Enumerable.Range(1, 30).ToArray());
+            list.RemoveRange(10, 20);
+            list.TrimExcess();
+        }
+        using (var list = new PooledSegmentedList<int>(Enumerable.Range(1, 30), pool, clearOnReturn: true)) { }
+        using (var list = new PooledSegmentedList<int>(30, pool, clearOnReturn: true))
+            list.AddRange(Enumerable.Range(1, 30).ToArray());
+        using (var list = new PooledSegmentedList<int>(pool, clearOnReturn: true))
+            list.AddRange(Enumerable.Range(1, 30).ToArray());
+
+        Assert.Empty(pool.Outstanding);
+        Assert.NotEmpty(pool.Returns);
+        Assert.All(pool.Returns, static r => Assert.True(r.Cleared));
     }
 
     [Fact]

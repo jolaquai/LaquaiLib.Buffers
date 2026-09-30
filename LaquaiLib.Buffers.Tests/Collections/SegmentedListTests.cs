@@ -1077,6 +1077,24 @@ public class SegmentedListTests
     }
 
     [Fact]
+    public void InsertRangeEnumerableKeepsPartialInsertAtIndexWhenSourceThrows()
+    {
+        static IEnumerable<int> Failing()
+        {
+            yield return 100;
+            yield return 101;
+            throw new InvalidOperationException("boom");
+        }
+
+        var expected = Enumerable.Range(0, 10).ToList();
+        var list = Filled(2, 4, 10);
+        Assert.Throws<InvalidOperationException>(() => expected.InsertRange(3, Failing()));
+        var ex = Assert.Throws<InvalidOperationException>(() => list.InsertRange(3, Failing()));
+        Assert.Equal("boom", ex.Message);
+        Assert.Equal(expected, list);
+    }
+
+    [Fact]
     public void BackwardSearchesRejectEachInvalidCountOperand()
     {
         var list = Filled(2, 4, 10);

@@ -520,13 +520,20 @@ public closed class SegmentedListBase<T> : IList<T>, IReadOnlyList<T>
         }
 
         var oldCount = _count;
-        AddRange(collection);
-        var added = _count - oldCount;
-        if (added == 0 || index == oldCount)
-            return;
-        ReverseCore(index, oldCount - index);
-        ReverseCore(oldCount, added);
-        ReverseCore(index, _count - index);
+        try
+        {
+            AddRange(collection);
+        }
+        finally
+        {
+            var added = _count - oldCount;
+            if (added != 0 && index != oldCount)
+            {
+                ReverseCore(index, oldCount - index);
+                ReverseCore(oldCount, added);
+                ReverseCore(index, _count - index);
+            }
+        }
     }
     #endregion
 
@@ -1039,7 +1046,8 @@ public closed class SegmentedListBase<T> : IList<T>, IReadOnlyList<T>
                 }
                 finally
                 {
-                    ArrayPool<T>.Shared.ReturnSafe(buffer);
+                    buffer.AsSpan(0, count).ZeroMemory();
+                    ArrayPool<T>.Shared.Return(buffer);
                 }
             }
         }
@@ -1340,35 +1348,43 @@ public sealed class SegmentedList<T> : SegmentedListBase<T>
 /// A <see cref="SegmentedListBase{T}"/> whose segments are rented from an <see cref="ArrayPool{T}"/> and returned to it when released.
 /// </summary>
 /// <remarks>
-/// Segments are returned by <see cref="SegmentedListBase{T}.TrimExcess"/> and <see cref="Dispose"/>. Arrays are cleared on return if <typeparamref name="T"/> is or contains references.
+/// Segments are returned by <see cref="SegmentedListBase{T}.TrimExcess"/> and <see cref="Dispose"/>. Arrays are cleared on return if <typeparamref name="T"/> is or contains references, or if requested at construction.
 /// Disposing returns every segment and leaves the instance as a usable empty list.
 /// </remarks>
 /// <typeparam name="T">The type of elements in the list.</typeparam>
 public sealed class PooledSegmentedList<T> : SegmentedListBase<T>, IDisposable
 {
     private readonly ArrayPool<T> _pool;
+    private readonly bool _clearOnReturn;
 
     /// <summary>
     /// Initializes a new, empty <see cref="PooledSegmentedList{T}"/> with the default segment sizes, renting from <see cref="ArrayPool{T}.Shared"/>.
     /// </summary>
-    public PooledSegmentedList() : this(null) { }
+    public PooledSegmentedList() : this((ArrayPool<T>)null) { }
     /// <summary>
     /// Initializes a new, empty <see cref="PooledSegmentedList{T}"/> with the default segment sizes.
     /// </summary>
     /// <param name="pool">The pool to rent segments from, or <see langword="null"/> for <see cref="ArrayPool{T}.Shared"/>.</param>
-    public PooledSegmentedList(ArrayPool<T> pool) => _pool = pool ?? ArrayPool<T>.Shared;
+    /// <param name="clearOnReturn">Whether to clear segments on return to the pool even if <typeparamref name="T"/> holds no references.</param>
+    public PooledSegmentedList(ArrayPool<T> pool, bool clearOnReturn = false)
+    {
+        _pool = pool ?? ArrayPool<T>.Shared;
+        _clearOnReturn = clearOnReturn;
+    }
     /// <summary>
     /// Initializes a new <see cref="PooledSegmentedList{T}"/> with the default segment sizes and room for at least <paramref name="capacity"/> elements.
     /// </summary>
     /// <param name="capacity">The minimum number of elements the list can hold without renting.</param>
     /// <param name="pool">The pool to rent segments from, or <see langword="null"/> for <see cref="ArrayPool{T}.Shared"/>.</param>
-    public PooledSegmentedList(int capacity, ArrayPool<T> pool = null) : this(pool) => EnsureCapacity(capacity);
+    /// <param name="clearOnReturn">Whether to clear segments on return to the pool even if <typeparamref name="T"/> holds no references.</param>
+    public PooledSegmentedList(int capacity, ArrayPool<T> pool = null, bool clearOnReturn = false) : this(pool, clearOnReturn) => EnsureCapacity(capacity);
     /// <summary>
     /// Initializes a new <see cref="PooledSegmentedList{T}"/> with the default segment sizes containing the elements of <paramref name="collection"/>.
     /// </summary>
     /// <param name="collection">The collection whose elements are copied into the list.</param>
     /// <param name="pool">The pool to rent segments from, or <see langword="null"/> for <see cref="ArrayPool{T}.Shared"/>.</param>
-    public PooledSegmentedList(IEnumerable<T> collection, ArrayPool<T> pool = null) : this(pool) => AddRange(collection);
+    /// <param name="clearOnReturn">Whether to clear segments on return to the pool even if <typeparamref name="T"/> holds no references.</param>
+    public PooledSegmentedList(IEnumerable<T> collection, ArrayPool<T> pool = null, bool clearOnReturn = false) : this(pool, clearOnReturn) => AddRange(collection);
     /// <summary>
     /// Initializes a new <see cref="PooledSegmentedList{T}"/> with the specified segment sizes.
     /// </summary>
@@ -1376,16 +1392,18 @@ public sealed class PooledSegmentedList<T> : SegmentedListBase<T>, IDisposable
     /// <param name="maxSegmentSize">The size segments stop growing at. Rounded up to a power of two; must not exceed 2^30. Equal to <paramref name="minSegmentSize"/> for fixed-size segments.</param>
     /// <param name="capacity">The minimum number of elements the list can hold without renting.</param>
     /// <param name="pool">The pool to rent segments from, or <see langword="null"/> for <see cref="ArrayPool{T}.Shared"/>.</param>
-    public PooledSegmentedList(int minSegmentSize, int maxSegmentSize, int capacity = 0, ArrayPool<T> pool = null) : base(minSegmentSize, maxSegmentSize)
+    /// <param name="clearOnReturn">Whether to clear segments on return to the pool even if <typeparamref name="T"/> holds no references.</param>
+    public PooledSegmentedList(int minSegmentSize, int maxSegmentSize, int capacity = 0, ArrayPool<T> pool = null, bool clearOnReturn = false) : base(minSegmentSize, maxSegmentSize)
     {
         _pool = pool ?? ArrayPool<T>.Shared;
+        _clearOnReturn = clearOnReturn;
         EnsureCapacity(capacity);
     }
 
     /// <inheritdoc/>
     protected override T[] AllocateSegment(int length) => _pool.Rent(length);
     /// <inheritdoc/>
-    protected override void ReleaseSegment(T[] segment) => _pool.ReturnSafe(segment);
+    protected override void ReleaseSegment(T[] segment) => _pool.ReturnSafe(segment, _clearOnReturn);
     /// <inheritdoc/>
     protected override SegmentedListBase<T> EmptyFromThis() => new SegmentedList<T>(MinSegmentSize, MaxSegmentSize);
 
