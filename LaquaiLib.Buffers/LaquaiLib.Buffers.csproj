@@ -2,14 +2,14 @@
 
   <PropertyGroup>
     <OutputType>Library</OutputType>
-    <TargetFrameworks>netstandard2.0;net10.0</TargetFrameworks>
+    <TargetFrameworks>netstandard2.0;net10.0;net11.0</TargetFrameworks>
     <Nullable>disable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
 
   <PropertyGroup>
-    <LangVersion>latest</LangVersion>
+    <LangVersion>preview</LangVersion>
     <RollForward>LatestMajor</RollForward>
     <DebugType>portable</DebugType>
     <DebugSymbols>True</DebugSymbols>
@@ -17,16 +17,16 @@
     <GenerateDocumentationFile>True</GenerateDocumentationFile>
     <SymbolPackageFormat>snupkg</SymbolPackageFormat>
     <IncludeSymbols>True</IncludeSymbols>
-    <Version>0.1.0</Version>
+    <Version>0.1.0-preview.1</Version>
 
     <PackageId>$(AssemblyName)</PackageId>
     <PackageVersion>$(Version)</PackageVersion>
     <Authors>jolaquai</Authors>
-    <PackageDescription>Provides pooled buffer primitives: an ArrayPool-backed Stream/IBufferWriter, a disposable rented-array wrapper, and small ArrayPool extensions.</PackageDescription>
+    <PackageDescription>Provides pooled or segmented buffer primitives and helpers to work with them.</PackageDescription>
     <PackageRequireLicenseAcceptance>False</PackageRequireLicenseAcceptance>
     <PackageLicenseFile>LICENSE</PackageLicenseFile>
     <PackageReadmeFile>README.md</PackageReadmeFile>
-    <PackageTags>buffers;arraypool;stream;ibufferwriter;pooled</PackageTags>
+    <PackageTags>buffers;arraypool;stream;ibufferwriter;pooled;segmented</PackageTags>
 
     <RepositoryType>git</RepositoryType>
     <RepositoryUrl>https://github.com/jolaquai/$(AssemblyName)</RepositoryUrl>

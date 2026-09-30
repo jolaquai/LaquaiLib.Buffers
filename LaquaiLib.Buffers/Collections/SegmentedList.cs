@@ -18,7 +18,7 @@ namespace LaquaiLib.Buffers.Collections;
 /// Unless configured, <see cref="MaxSegmentSize"/> defaults to the largest power of two that keeps a segment off the large object heap, and <see cref="MinSegmentSize"/> to 16 (or <see cref="MaxSegmentSize"/> if that is smaller).
 /// </remarks>
 /// <typeparam name="T">The type of elements in the list.</typeparam>
-public class SegmentedList<T> : IList<T>, IReadOnlyList<T>
+public closed class SegmentedListBase<T> : IList<T>, IReadOnlyList<T>
 {
     private const int LargeObjectHeapThreshold = 85000;
     private const int MaxSegmentShift = 30;
@@ -43,26 +43,26 @@ public class SegmentedList<T> : IList<T>, IReadOnlyList<T>
     private int _tailLength;
 
     /// <summary>
-    /// Initializes a new, empty <see cref="SegmentedList{T}"/> with the default segment sizes.
+    /// Initializes a new, empty <see cref="SegmentedListBase{T}"/> with the default segment sizes.
     /// </summary>
-    public SegmentedList() : this(1 << DefaultMinShift, 1 << DefaultMaxShift) { }
+    protected SegmentedListBase() : this(1 << DefaultMinShift, 1 << DefaultMaxShift) { }
     /// <summary>
-    /// Initializes a new <see cref="SegmentedList{T}"/> with the default segment sizes and room for at least <paramref name="capacity"/> elements.
+    /// Initializes a new <see cref="SegmentedListBase{T}"/> with the default segment sizes and room for at least <paramref name="capacity"/> elements.
     /// </summary>
     /// <param name="capacity">The minimum number of elements the list can hold without allocating.</param>
-    public SegmentedList(int capacity) : this() => EnsureCapacity(capacity);
+    protected SegmentedListBase(int capacity) : this() => EnsureCapacity(capacity);
     /// <summary>
-    /// Initializes a new <see cref="SegmentedList{T}"/> with the default segment sizes containing the elements of <paramref name="collection"/>.
+    /// Initializes a new <see cref="SegmentedListBase{T}"/> with the default segment sizes containing the elements of <paramref name="collection"/>.
     /// </summary>
     /// <param name="collection">The collection whose elements are copied into the list.</param>
-    public SegmentedList(IEnumerable<T> collection) : this() => AddRange(collection);
+    protected SegmentedListBase(IEnumerable<T> collection) : this() => AddRange(collection);
     /// <summary>
-    /// Initializes a new <see cref="SegmentedList{T}"/> with the specified segment sizes.
+    /// Initializes a new <see cref="SegmentedListBase{T}"/> with the specified segment sizes.
     /// </summary>
     /// <param name="minSegmentSize">The size of the first segment. Rounded up to a power of two.</param>
     /// <param name="maxSegmentSize">The size segments stop growing at. Rounded up to a power of two; must not exceed 2^30. Equal to <paramref name="minSegmentSize"/> for fixed-size segments.</param>
     /// <param name="capacity">The minimum number of elements the list can hold without allocating.</param>
-    public SegmentedList(int minSegmentSize, int maxSegmentSize, int capacity = 0)
+    protected SegmentedListBase(int minSegmentSize, int maxSegmentSize, int capacity = 0)
     {
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(minSegmentSize);
         ArgumentOutOfRangeException.ThrowIfGreaterThan(maxSegmentSize, 1 << MaxSegmentShift);
@@ -120,7 +120,7 @@ public class SegmentedList<T> : IList<T>, IReadOnlyList<T>
     private static int GetDefaultMaxShift()
     {
         var elements = (LargeObjectHeapThreshold - 1 - 3 * IntPtr.Size) / Unsafe.SizeOf<T>();
-        return elements <= 1 ? 0 : Math.Min(BitOperations.Log2((uint)elements), MaxSegmentShift);
+        return Math.Min(BitOperations.Log2((uint)elements), MaxSegmentShift);
     }
     private static int CeilLog2(int value) => value == 1 ? 0 : BitOperations.Log2((uint)(value - 1)) + 1;
 
@@ -186,6 +186,10 @@ public class SegmentedList<T> : IList<T>, IReadOnlyList<T>
     /// </summary>
     /// <param name="segment">The array previously returned by <see cref="AllocateSegment(int)"/>.</param>
     protected virtual void ReleaseSegment(T[] segment) { }
+    /// <summary>
+    /// Creates a new <see cref="SegmentedListBase{T}"/> of the same type and segment sizes, left empty.
+    /// </summary>
+    protected abstract SegmentedListBase<T> EmptyFromThis();
 
     private void AddSegment()
     {
@@ -411,7 +415,7 @@ public class SegmentedList<T> : IList<T>, IReadOnlyList<T>
             case List<T> list:
                 AddRange(CollectionsMarshal.AsSpan(list));
                 return;
-            case SegmentedList<T> other:
+            case SegmentedListBase<T> other:
             {
                 var remaining = other._count;
                 if (remaining > int.MaxValue - _count)
@@ -787,13 +791,13 @@ public class SegmentedList<T> : IList<T>, IReadOnlyList<T>
     }
 
     /// <summary>
-    /// Returns a new <see cref="SegmentedList{T}"/> with the same segment sizes containing all elements that match <paramref name="match"/>.
+    /// Returns a new <see cref="SegmentedListBase{T}"/> with the same segment sizes containing all elements that match <paramref name="match"/>.
     /// </summary>
     /// <param name="match">The predicate to test elements with.</param>
-    public SegmentedList<T> FindAll(Predicate<T> match)
+    public SegmentedListBase<T> FindAll(Predicate<T> match)
     {
         ArgumentNullException.ThrowIfNull(match);
-        var result = new SegmentedList<T>(MinSegmentSize, MaxSegmentSize);
+        var result = EmptyFromThis();
         for (var index = 0; index < _count;)
         {
             var n = ChunkAt(index, _count - index, out var array, out var offset);
@@ -1061,18 +1065,19 @@ public class SegmentedList<T> : IList<T>, IReadOnlyList<T>
     }
 
     /// <summary>
-    /// Returns a new <see cref="SegmentedList{T}"/> with the same segment sizes containing <paramref name="count"/> elements starting at <paramref name="index"/>.
+    /// Returns a new <see cref="SegmentedListBase{T}"/> with the same segment sizes containing <paramref name="count"/> elements starting at <paramref name="index"/>.
     /// </summary>
     /// <param name="index">The zero-based starting index of the range.</param>
     /// <param name="count">The length of the range.</param>
-    public SegmentedList<T> GetRange(int index, int count)
+    public SegmentedListBase<T> GetRange(int index, int count)
     {
         ArgumentOutOfRangeException.ThrowIfNegative(index);
         ArgumentOutOfRangeException.ThrowIfNegative(count);
         if (_count - index < count)
             ThrowInvalidRange();
 
-        var result = new SegmentedList<T>(MinSegmentSize, MaxSegmentSize, count);
+        var result = EmptyFromThis();
+        result.EnsureCapacity(count);
         for (var end = index + count; index < end;)
         {
             var n = ChunkAt(index, end - index, out var array, out var offset);
@@ -1161,11 +1166,11 @@ public class SegmentedList<T> : IList<T>, IReadOnlyList<T>
     public SegmentEnumerator EnumerateSegments() => new SegmentEnumerator(this);
 
     /// <summary>
-    /// Enumerates the elements of a <see cref="SegmentedList{T}"/>.
+    /// Enumerates the elements of a <see cref="SegmentedListBase{T}"/>.
     /// </summary>
     public struct Enumerator : IEnumerator<T>
     {
-        private readonly SegmentedList<T> _list;
+        private readonly SegmentedListBase<T> _list;
         private readonly int _version;
         private T[] _segment;
         private int _segmentIndex;
@@ -1174,7 +1179,7 @@ public class SegmentedList<T> : IList<T>, IReadOnlyList<T>
         private int _remaining;
         private T _current;
 
-        internal Enumerator(SegmentedList<T> list)
+        internal Enumerator(SegmentedListBase<T> list)
         {
             _list = list;
             _version = list._version;
@@ -1232,16 +1237,16 @@ public class SegmentedList<T> : IList<T>, IReadOnlyList<T>
     }
 
     /// <summary>
-    /// Enumerates the occupied portion of each segment of a <see cref="SegmentedList{T}"/>.
+    /// Enumerates the occupied portion of each segment of a <see cref="SegmentedListBase{T}"/>.
     /// </summary>
     public ref struct SegmentEnumerator
     {
-        private readonly SegmentedList<T> _list;
+        private readonly SegmentedListBase<T> _list;
         private int _segment;
         private int _remaining;
         private Span<T> _current;
 
-        internal SegmentEnumerator(SegmentedList<T> list)
+        internal SegmentEnumerator(SegmentedListBase<T> list)
         {
             _list = list;
             _segment = -1;
@@ -1300,21 +1305,53 @@ public class SegmentedList<T> : IList<T>, IReadOnlyList<T>
 }
 
 /// <summary>
-/// A <see cref="SegmentedList{T}"/> whose segments are rented from an <see cref="ArrayPool{T}"/> and returned to it when released.
+/// A <see cref="SegmentedListBase{T}"/> whose segments are allocated on demand.
+/// </summary>
+/// <typeparam name="T">The type of elements in the list.</typeparam>
+public sealed class SegmentedList<T> : SegmentedListBase<T>
+{
+    /// <summary>
+    /// Initializes a new, empty <see cref="SegmentedList{T}"/> with the default segment sizes.
+    /// </summary>
+    public SegmentedList() : base() { }
+    /// <summary>
+    /// Initializes a new <see cref="SegmentedList{T}"/> with the default segment sizes and room for at least <paramref name="capacity"/> elements.
+    /// </summary>
+    /// <param name="capacity">The minimum number of elements the list can hold without allocating.</param>
+    public SegmentedList(int capacity) : base(capacity) { }
+    /// <summary>
+    /// Initializes a new <see cref="SegmentedList{T}"/> with the default segment sizes containing the elements of <paramref name="collection"/>.
+    /// </summary>
+    /// <param name="collection">The collection whose elements are copied into the list.</param>
+    public SegmentedList(IEnumerable<T> collection) : base(collection) { }
+    /// <summary>
+    /// Initializes a new <see cref="SegmentedList{T}"/> with the specified segment sizes.
+    /// </summary>
+    /// <param name="minSegmentSize">The size of the first segment. Rounded up to a power of two.</param>
+    /// <param name="maxSegmentSize">The size segments stop growing at. Rounded up to a power of two; must not exceed 2^30. Equal to <paramref name="minSegmentSize"/> for fixed-size segments.</param>
+    /// <param name="capacity">The minimum number of elements the list can hold without allocating.</param>
+    public SegmentedList(int minSegmentSize, int maxSegmentSize, int capacity = 0) : base(minSegmentSize, maxSegmentSize, capacity) { }
+
+    /// <inheritdoc/>
+    protected override SegmentedListBase<T> EmptyFromThis() => new SegmentedList<T>(MinSegmentSize, MaxSegmentSize);
+}
+
+/// <summary>
+/// A <see cref="SegmentedListBase{T}"/> whose segments are rented from an <see cref="ArrayPool{T}"/> and returned to it when released.
 /// </summary>
 /// <remarks>
-/// Segments are returned by <see cref="SegmentedList{T}.TrimExcess"/> and <see cref="Dispose"/>. Arrays are cleared on return if <typeparamref name="T"/> is or contains references.
+/// Segments are returned by <see cref="SegmentedListBase{T}.TrimExcess"/> and <see cref="Dispose"/>. Arrays are cleared on return if <typeparamref name="T"/> is or contains references.
 /// Disposing returns every segment and leaves the instance as a usable empty list.
 /// </remarks>
 /// <typeparam name="T">The type of elements in the list.</typeparam>
-public sealed class PooledSegmentedList<T> : SegmentedList<T>, IDisposable
+public sealed class PooledSegmentedList<T> : SegmentedListBase<T>, IDisposable
 {
     private readonly ArrayPool<T> _pool;
 
     /// <summary>
     /// Initializes a new, empty <see cref="PooledSegmentedList{T}"/> with the default segment sizes, renting from <see cref="ArrayPool{T}.Shared"/>.
     /// </summary>
-    public PooledSegmentedList() : this((ArrayPool<T>)null) { }
+    public PooledSegmentedList() : this(null) { }
     /// <summary>
     /// Initializes a new, empty <see cref="PooledSegmentedList{T}"/> with the default segment sizes.
     /// </summary>
@@ -1349,6 +1386,8 @@ public sealed class PooledSegmentedList<T> : SegmentedList<T>, IDisposable
     protected override T[] AllocateSegment(int length) => _pool.Rent(length);
     /// <inheritdoc/>
     protected override void ReleaseSegment(T[] segment) => _pool.ReturnSafe(segment);
+    /// <inheritdoc/>
+    protected override SegmentedListBase<T> EmptyFromThis() => new SegmentedList<T>(MinSegmentSize, MaxSegmentSize);
 
     /// <summary>
     /// Returns all segments to the pool, leaving the list empty.

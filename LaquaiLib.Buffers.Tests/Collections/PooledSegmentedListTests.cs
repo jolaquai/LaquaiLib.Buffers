@@ -69,6 +69,17 @@ public class PooledSegmentedListTests
     }
 
     [Fact]
+    public void NullPoolFallsBackToSharedPool()
+    {
+        using var list = new PooledSegmentedList<int>(4, 16, 10, pool: null);
+        list.AddRange(Enumerable.Range(0, 50).ToArray());
+        Assert.Equal(Enumerable.Range(0, 50), list);
+        list.Dispose();
+        list.Dispose();
+        Assert.Empty(list);
+    }
+
+    [Fact]
     public void OversizedAndDirtyRentedArraysDoNotLeakIntoList()
     {
         var pool = new TrackingPool<int>(extraLength: 5, fill: -1);
@@ -156,5 +167,26 @@ public class PooledSegmentedListTests
         Assert.Equal(Enumerable.Range(0, 10), list);
         list.Dispose();
         Assert.Empty(pool.Outstanding);
+    }
+
+    [Fact]
+    public void FindAllAndGetRangeReturnUnpooledListsWithSameSegmentSizes()
+    {
+        var pool = new TrackingPool<int>();
+        using var list = new PooledSegmentedList<int>(4, 16, pool: pool);
+        for (var i = 0; i < 40; i++)
+            list.Add(i);
+        var rented = pool.Requests.Count;
+
+        var evens = list.FindAll(static x => x % 2 == 0);
+        var range = list.GetRange(5, 20);
+
+        Assert.IsType<SegmentedList<int>>(evens);
+        Assert.IsType<SegmentedList<int>>(range);
+        Assert.Equal(rented, pool.Requests.Count);
+        Assert.Equal((4, 16), (evens.MinSegmentSize, evens.MaxSegmentSize));
+        Assert.Equal((4, 16), (range.MinSegmentSize, range.MaxSegmentSize));
+        Assert.Equal(Enumerable.Range(0, 20).Select(static x => x * 2), evens);
+        Assert.Equal(Enumerable.Range(5, 20), range);
     }
 }

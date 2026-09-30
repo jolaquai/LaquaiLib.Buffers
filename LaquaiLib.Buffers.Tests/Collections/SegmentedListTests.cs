@@ -1,3 +1,4 @@
+using System.Buffers;
 using System.Collections;
 using System.Runtime.InteropServices;
 
@@ -13,28 +14,54 @@ public class SegmentedListTests
         public byte B;
     }
 
-    private sealed class CapturingList<T>(int minSegmentSize, int maxSegmentSize) : SegmentedList<T>(minSegmentSize, maxSegmentSize)
+    [StructLayout(LayoutKind.Sequential, Size = 50000)]
+    private struct Enormous
+    {
+        public byte B;
+    }
+
+    private sealed class NullPool<T> : ArrayPool<T>
+    {
+        public override T[] Rent(int minimumLength) => null;
+        public override void Return(T[] array, bool clearArray = false) { }
+    }
+
+    private static void SetField<T>(SegmentedListBase<T> list, string name, int value)
+        => typeof(SegmentedListBase<T>).GetField(name, System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance).SetValue(list, value);
+
+    private sealed class CapturingPool<T>(int shortBy = 0) : ArrayPool<T>
     {
         public readonly List<T[]> Allocated = [];
         public readonly List<T[]> Released = [];
 
-        protected override T[] AllocateSegment(int length)
+        public override T[] Rent(int minimumLength)
         {
-            var array = base.AllocateSegment(length);
+            var array = new T[minimumLength - shortBy];
             Allocated.Add(array);
             return array;
         }
-        protected override void ReleaseSegment(T[] segment)
-        {
-            Released.Add(segment);
-            base.ReleaseSegment(segment);
-        }
+        public override void Return(T[] array, bool clearArray = false) => Released.Add(array);
         public int NonNullSlots() => Allocated.Except(Released).Sum(static a => a.Count(static x => x is not null));
     }
 
-    private sealed class ShortAllocatingList() : SegmentedList<int>(4, 4)
+    private sealed class HugeCollection<T>(int count) : ICollection<T>
     {
-        protected override int[] AllocateSegment(int length) => new int[length - 1];
+        public int Count => count;
+        public bool IsReadOnly => true;
+        public void Add(T item) => throw new NotSupportedException();
+        public void Clear() => throw new NotSupportedException();
+        public bool Contains(T item) => throw new NotSupportedException();
+        public void CopyTo(T[] array, int arrayIndex) => throw new NotSupportedException();
+        public bool Remove(T item) => throw new NotSupportedException();
+        public IEnumerator<T> GetEnumerator() => throw new NotSupportedException();
+        IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
+    }
+
+    private sealed class HugeReadOnlyCollection<T>(int count) : IReadOnlyCollection<T>
+    {
+        public int Count => count;
+        public IEnumerator<T> GetEnumerator() => throw new NotSupportedException();
+        IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
     }
 
     private sealed class ReadOnlyOnly<T>(IEnumerable<T> items) : IReadOnlyCollection<T>
@@ -226,12 +253,33 @@ public class SegmentedListTests
     [Fact]
     public void AllocateSegmentReturningShortArrayThrows()
     {
-        var list = new ShortAllocatingList();
+        using var list = new PooledSegmentedList<int>(4, 4, pool: new CapturingPool<int>(shortBy: 1));
         Assert.Throws<InvalidOperationException>(() => list.Add(1));
     }
     #endregion
 
     #region Indexing and adding
+    [Fact]
+    public void AddRangeRejectsCollectionsThatWouldOverflowCount()
+    {
+        var list = Filled(4, 16, 1);
+        Assert.Throws<InvalidOperationException>(() => list.AddRange(new HugeCollection<int>(int.MaxValue)));
+        Assert.Throws<InvalidOperationException>(() => list.AddRange(new HugeReadOnlyCollection<int>(int.MaxValue)));
+        Assert.Equal([0], list.ToArray());
+    }
+
+#if NETCOREAPP
+    [Fact]
+    public void SpanRangesRejectLengthsThatWouldOverflowCount()
+    {
+        var list = Filled(4, 16, 1);
+        var dummy = 0;
+        Assert.Throws<InvalidOperationException>(() => list.AddRange(MemoryMarshal.CreateReadOnlySpan(ref dummy, int.MaxValue)));
+        Assert.Throws<InvalidOperationException>(() => list.InsertRange(0, MemoryMarshal.CreateReadOnlySpan(ref dummy, int.MaxValue)));
+        Assert.Equal([0], list.ToArray());
+    }
+#endif
+
     [Theory]
     [MemberData(nameof(Configs))]
     public void AddAndIndexerRoundTrip(int min, int max)
@@ -485,29 +533,31 @@ public class SegmentedListTests
     [Fact]
     public void RemovalsClearVacatedReferenceSlots()
     {
-        var list = new CapturingList<string>(2, 8);
+        var pool = new CapturingPool<string>();
+        using var list = new PooledSegmentedList<string>(2, 8, pool: pool);
         for (var i = 0; i < 100; i++)
             list.Add(i.ToString());
-        Assert.Equal(100, list.NonNullSlots());
+        Assert.Equal(100, pool.NonNullSlots());
 
         list.RemoveAt(99);
-        Assert.Equal(99, list.NonNullSlots());
+        Assert.Equal(99, pool.NonNullSlots());
         list.RemoveAt(10);
-        Assert.Equal(98, list.NonNullSlots());
+        Assert.Equal(98, pool.NonNullSlots());
         list.RemoveRange(5, 20);
-        Assert.Equal(78, list.NonNullSlots());
+        Assert.Equal(78, pool.NonNullSlots());
         list.Truncate(60);
-        Assert.Equal(60, list.NonNullSlots());
+        Assert.Equal(60, pool.NonNullSlots());
         list.RemoveAll(static s => s.EndsWith("7"));
-        Assert.Equal(list.Count, list.NonNullSlots());
+        Assert.Equal(list.Count, pool.NonNullSlots());
         list.Clear();
-        Assert.Equal(0, list.NonNullSlots());
+        Assert.Equal(0, pool.NonNullSlots());
     }
 
     [Fact]
     public void TrimExcessReleasesUnusedSegments()
     {
-        var list = new CapturingList<string>(4, 16);
+        var pool = new CapturingPool<string>();
+        using var list = new PooledSegmentedList<string>(4, 16, pool: pool);
         list.EnsureCapacity(100);
         Assert.Equal(8, list.SegmentCount);
         for (var i = 0; i < 10; i++)
@@ -516,10 +566,10 @@ public class SegmentedListTests
         list.TrimExcess();
         Assert.Equal(2, list.SegmentCount);
         Assert.Equal(12, list.Capacity);
-        Assert.Equal(list.Allocated.Skip(2), list.Released);
+        Assert.Equal(pool.Allocated.Skip(2), pool.Released);
 
         list.TrimExcess();
-        Assert.Equal(6, list.Released.Count);
+        Assert.Equal(6, pool.Released.Count);
 
         for (var i = 10; i < 50; i++)
             list.Add(i.ToString());
@@ -529,7 +579,7 @@ public class SegmentedListTests
         list.TrimExcess();
         Assert.Equal(0, list.SegmentCount);
         Assert.Equal(0, list.Capacity);
-        Assert.Equal(list.Allocated.Count, list.Released.Count);
+        Assert.Equal(pool.Allocated.Count, pool.Released.Count);
 
         list.Add("x");
         Assert.Equal(["x"], list.ToArray());
@@ -537,6 +587,26 @@ public class SegmentedListTests
     #endregion
 
     #region Search
+    [Fact]
+    public void RangedSearchesRejectOutOfRangeStartIndex()
+    {
+        var list = Filled(2, 8, 5);
+        Assert.Throws<ArgumentOutOfRangeException>(() => list.IndexOf(0, 6, 0));
+        Assert.Throws<ArgumentOutOfRangeException>(() => list.LastIndexOf(0, 5, 1));
+        Assert.Throws<ArgumentOutOfRangeException>(() => list.FindIndex(6, 0, static _ => true));
+    }
+
+    [Fact]
+    public void BackwardSearchesOnEmptyListMatchList()
+    {
+        var list = new SegmentedList<int>();
+        var reference = new List<int>();
+        Assert.Equal(reference.LastIndexOf(1, 5, 2), list.LastIndexOf(1, 5, 2));
+        Assert.Equal(reference.FindLastIndex(-1, 0, static _ => true), list.FindLastIndex(-1, 0, static _ => true));
+        Assert.Throws<ArgumentOutOfRangeException>(() => reference.FindLastIndex(0, 0, static _ => true));
+        Assert.Throws<ArgumentOutOfRangeException>(() => list.FindLastIndex(0, 0, static _ => true));
+    }
+
     [Theory]
     [MemberData(nameof(Configs))]
     public void IndexOfAndLastIndexOfMatchList(int min, int max)
@@ -785,6 +855,26 @@ public class SegmentedListTests
     }
 
     [Fact]
+    public void NonGenericEnumerationYieldsBoxedElements()
+    {
+        var list = Filled(2, 4, 7);
+        var enumerator = ((IEnumerable)list).GetEnumerator();
+        var items = new List<object>();
+        while (enumerator.MoveNext())
+            items.Add(enumerator.Current);
+        Assert.Equal(Enumerable.Range(0, 7).Cast<object>(), items);
+    }
+
+    [Fact]
+    public void EnumeratorResetThrowsWhenListIsModified()
+    {
+        var list = Filled(2, 4, 3);
+        var enumerator = list.GetEnumerator();
+        list.Add(3);
+        Assert.Throws<InvalidOperationException>(() => enumerator.Reset());
+    }
+
+    [Fact]
     public void EnumeratingEmptyListYieldsNothing()
     {
         var list = new SegmentedList<int>();
@@ -933,5 +1023,66 @@ public class SegmentedListTests
             }
             AssertSame(expected, list);
         }
+    }
+
+    [Fact]
+    public void SegmentsHoldingSingleElementForEnormousElementType()
+    {
+        var list = new SegmentedList<Enormous>();
+        Assert.Equal(1, list.MaxSegmentSize);
+        Assert.Equal(1, list.MinSegmentSize);
+        list.Add(new Enormous { B = 1 });
+        list.Add(new Enormous { B = 2 });
+        Assert.Equal(2, list.Count);
+        Assert.Equal(2, list[1].B);
+        Assert.Equal(2, list.SegmentCount);
+    }
+
+    [Fact]
+    public void AddThrowsWhenCapacityIsExhausted()
+    {
+        var list = new SegmentedList<int>();
+        SetField(list, "_capacity", int.MaxValue);
+        Assert.Throws<InvalidOperationException>(() => list.Add(1));
+    }
+
+    [Fact]
+    public void AllocateSegmentReturningNullThrows()
+    {
+        using var list = new PooledSegmentedList<int>(4, 4, pool: new NullPool<int>());
+        Assert.Throws<InvalidOperationException>(() => list.Add(1));
+    }
+
+    [Fact]
+    public void RangeAdditionsRejectOverflowingCount()
+    {
+        var other = Filled(4, 16, 3);
+        var list = new SegmentedList<int>();
+        SetField(list, "_count", int.MaxValue - 2);
+        Assert.Throws<InvalidOperationException>(() => list.AddRange(other));
+        Assert.Throws<InvalidOperationException>(() => list.AddRange(new ReadOnlySpan<int>([1, 2, 3])));
+        Assert.Throws<InvalidOperationException>(() => list.InsertRange(0, new ReadOnlySpan<int>([1, 2, 3])));
+    }
+
+    [Fact]
+    public void InsertRangeEnumerableHandlesEmptyAndAppendingSources()
+    {
+        var list = Filled(2, 4, 6);
+        list.InsertRange(3, Yield());
+        Assert.Equal([0, 1, 2, 3, 4, 5], list.ToArray());
+        list.InsertRange(6, Yield(6, 7));
+        Assert.Equal([0, 1, 2, 3, 4, 5, 6, 7], list.ToArray());
+        list.InsertRange(0, Yield());
+        Assert.Equal(8, list.Count);
+    }
+
+    [Fact]
+    public void BackwardSearchesRejectEachInvalidCountOperand()
+    {
+        var list = Filled(2, 4, 10);
+        Assert.Throws<ArgumentOutOfRangeException>(() => list.LastIndexOf(0, 5, -1));
+        Assert.Throws<ArgumentOutOfRangeException>(() => list.LastIndexOf(0, 5, 7));
+        Assert.Throws<ArgumentOutOfRangeException>(() => list.FindLastIndex(5, -1, static _ => true));
+        Assert.Throws<ArgumentOutOfRangeException>(() => list.FindLastIndex(5, 7, static _ => true));
     }
 }
