@@ -1,4 +1,4 @@
-namespace LaquaiLib.IO;
+namespace LaquaiLib.Buffers.Extensions;
 
 /// <summary>
 /// Provides extensions for <see cref="Span{T}"/>.

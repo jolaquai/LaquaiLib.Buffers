@@ -1,7 +1,7 @@
 ﻿using System.Buffers;
 using System.Runtime.CompilerServices;
 
-namespace LaquaiLib.Wrappers;
+namespace LaquaiLib.Buffers.Wrappers;
 
 /// <summary>
 /// Wraps an array of <typeparamref name="T"/>, the <see cref="ArrayPool{T}"/> it was rented from, an optional <paramref name="offset"/> and <paramref name="length"/> delimiting the span of the array to be used, and a <paramref name="clear"/> flag indicating whether the array should be cleared when returned to the pool.

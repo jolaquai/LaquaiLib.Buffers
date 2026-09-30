@@ -1,6 +1,9 @@
 using System.Buffers;
 
-namespace LaquaiLib.IO.Streams;
+using LaquaiLib.Buffers.Extensions;
+using LaquaiLib.Buffers.Internal;
+
+namespace LaquaiLib.Buffers;
 
 /// <summary>
 /// Implements a <see cref="Stream"/> whose backing memory is source from an <see cref="ArrayPool{T}"/>.

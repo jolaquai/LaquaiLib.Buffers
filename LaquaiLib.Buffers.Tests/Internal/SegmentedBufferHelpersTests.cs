@@ -1,6 +1,6 @@
-using LaquaiLib.IO;
+using LaquaiLib.Buffers.Internal;
 
-namespace LaquaiLib.Buffers.Tests.IO;
+namespace LaquaiLib.Buffers.Tests.Internal;
 
 public class SegmentedBufferHelpersTests
 {

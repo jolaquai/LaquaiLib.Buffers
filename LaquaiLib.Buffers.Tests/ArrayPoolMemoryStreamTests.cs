@@ -1,10 +1,6 @@
 using System.Buffers;
 
-using LaquaiLib.IO.Streams;
-using LaquaiLib.Buffers;
-using LaquaiLib.Buffers.Tests;
-
-namespace LaquaiLib.Buffers.Tests.IO.Streams;
+namespace LaquaiLib.Buffers.Tests;
 
 public class ArrayPoolMemoryStreamTests
 {

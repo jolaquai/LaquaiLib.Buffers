@@ -1,6 +1,6 @@
 ﻿using System.Buffers;
 
-namespace LaquaiLib.Extensions;
+namespace LaquaiLib.Buffers.Extensions;
 
 /// <summary>
 /// Provides extensions for <see cref="ArrayPool{T}"/>.

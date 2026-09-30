@@ -1,7 +1,7 @@
 using System.Buffers;
 using System.Runtime.InteropServices;
 
-using LaquaiLib.Extensions;
+using LaquaiLib.Buffers.Extensions;
 
 namespace LaquaiLib.Buffers.Tests.Extensions;
 

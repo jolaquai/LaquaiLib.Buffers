@@ -9,8 +9,6 @@
   </PropertyGroup>
 
   <PropertyGroup>
-    <RootNamespace>LaquaiLib</RootNamespace>
-
     <LangVersion>latest</LangVersion>
     <RollForward>LatestMajor</RollForward>
     <DebugType>portable</DebugType>

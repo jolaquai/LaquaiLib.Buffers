@@ -1,4 +1,4 @@
-namespace LaquaiLib.IO;
+namespace LaquaiLib.Buffers.Internal;
 
 /// <summary>
 /// Represents one array within a segmented buffer, paired with the portion of it the buffer actually addresses.

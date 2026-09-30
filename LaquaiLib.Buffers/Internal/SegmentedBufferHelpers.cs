@@ -1,4 +1,4 @@
-namespace LaquaiLib.IO;
+namespace LaquaiLib.Buffers.Internal;
 
 internal static class SegmentedBufferHelpers
 {

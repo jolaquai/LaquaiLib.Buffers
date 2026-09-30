@@ -1,6 +1,6 @@
 using System.Buffers;
 
-using LaquaiLib.Wrappers;
+using LaquaiLib.Buffers.Wrappers;
 
 namespace LaquaiLib.Buffers.Tests.Wrappers;
 
