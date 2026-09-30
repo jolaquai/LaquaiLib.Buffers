@@ -45,7 +45,7 @@ jobs:
         run: |
           $exes = @(
             "LaquaiLib.Buffers.Tests/bin/Release/net48/LaquaiLib.Buffers.Tests.exe",
-            "LaquaiLib.Buffers.Tests/bin/Release/net10.0/LaquaiLib.Buffers.Tests.exe"
+            "LaquaiLib.Buffers.Tests/bin/Release/net11.0/LaquaiLib.Buffers.Tests.exe"
           )
           foreach ($exe in $exes) {
             if (-not (Test-Path $exe)) { throw "Test runner not found at $exe" }
