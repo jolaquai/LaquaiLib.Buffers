@@ -75,6 +75,9 @@ public class PooledSegmentedListTests
         list.Dispose();
         list.Dispose();
         Assert.Empty(list);
+        using var bare = new PooledSegmentedList<int>(null);
+        bare.Add(1);
+        Assert.Equal([1], bare);
     }
 
     [Fact]

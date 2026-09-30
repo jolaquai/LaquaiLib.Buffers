@@ -1360,13 +1360,18 @@ public sealed class PooledSegmentedList<T> : SegmentedListBase<T>, IDisposable
     /// <summary>
     /// Initializes a new, empty <see cref="PooledSegmentedList{T}"/> with the default segment sizes, renting from <see cref="ArrayPool{T}.Shared"/>.
     /// </summary>
-    public PooledSegmentedList() : this((ArrayPool<T>)null) { }
+    public PooledSegmentedList() : this(null, false) { }
+    /// <summary>
+    /// Initializes a new, empty <see cref="PooledSegmentedList{T}"/> with the default segment sizes.
+    /// </summary>
+    /// <param name="pool">The pool to rent segments from, or <see langword="null"/> for <see cref="ArrayPool{T}.Shared"/>.</param>
+    public PooledSegmentedList(ArrayPool<T> pool) : this(pool, false) { }
     /// <summary>
     /// Initializes a new, empty <see cref="PooledSegmentedList{T}"/> with the default segment sizes.
     /// </summary>
     /// <param name="pool">The pool to rent segments from, or <see langword="null"/> for <see cref="ArrayPool{T}.Shared"/>.</param>
     /// <param name="clearOnReturn">Whether to clear segments on return to the pool even if <typeparamref name="T"/> holds no references.</param>
-    public PooledSegmentedList(ArrayPool<T> pool, bool clearOnReturn = false)
+    public PooledSegmentedList(ArrayPool<T> pool, bool clearOnReturn)
     {
         _pool = pool ?? ArrayPool<T>.Shared;
         _clearOnReturn = clearOnReturn;
