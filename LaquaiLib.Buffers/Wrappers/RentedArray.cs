@@ -17,15 +17,16 @@ public struct RentedArray<T>(T[] array, int offset = 0, int length = -1, ArrayPo
     /// <summary>
     /// Gets the underlying array.
     /// </summary>
-    public T[] Array { get; private set; } = array;
+    public T[] Array { get; private set; } = array ?? throw new ArgumentNullException(nameof(array));
     /// <summary>
     /// The offset in the array where the span starts.
     /// </summary>
-    public readonly int Offset = offset;
+    public readonly int Offset = (uint)offset <= (uint)array.Length ? offset : throw new ArgumentOutOfRangeException(nameof(offset));
     /// <summary>
     /// The length of the span.
     /// </summary>
-    public readonly int Length = length == -1 ? array.Length - offset : length;
+    public readonly int Length = length == -1 ? array.Length - offset
+        : (uint)length <= (uint)(array.Length - offset) ? length : throw new ArgumentOutOfRangeException(nameof(length));
     /// <summary>
     /// The <see cref="ArrayPool{T}"/> from which the array was rented.
     /// </summary>

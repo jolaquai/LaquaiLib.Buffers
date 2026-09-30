@@ -47,6 +47,19 @@ public class RentedArrayTests
     }
 
     [Fact]
+    public void ConstructorValidatesArguments()
+    {
+        var array = new int[4];
+        Assert.Equal("array", Assert.Throws<ArgumentNullException>(() => new RentedArray<int>(null)).ParamName);
+        Assert.Equal("offset", Assert.Throws<ArgumentOutOfRangeException>(() => new RentedArray<int>(array, -1)).ParamName);
+        Assert.Equal("offset", Assert.Throws<ArgumentOutOfRangeException>(() => new RentedArray<int>(array, 5)).ParamName);
+        Assert.Equal("length", Assert.Throws<ArgumentOutOfRangeException>(() => new RentedArray<int>(array, 1, 4)).ParamName);
+        Assert.Equal("length", Assert.Throws<ArgumentOutOfRangeException>(() => new RentedArray<int>(array, 0, -2)).ParamName);
+        Assert.Equal(0, new RentedArray<int>(array, 4).Length);
+        Assert.Equal(3, new RentedArray<int>(array, 1, 3).Length);
+    }
+
+    [Fact]
     public void DisposeClearsReferenceTypeArrayEvenWhenClearIsFalse()
     {
         var pool = new RecordingArrayPool<string>();
