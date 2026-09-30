@@ -336,6 +336,22 @@ public class ArrayPoolExtensionsTests
         Assert.Null(pool.LastRentMinimumLength);
     }
 
+    private sealed class FixedArrayPool<T>(T[] array) : ArrayPool<T>
+    {
+        public override T[] Rent(int minimumLength) => array;
+        public override void Return(T[] array, bool clearArray = false) { }
+    }
+
+    [Fact]
+    public void RentRejectsNullOrShortArraysFromPool()
+    {
+        Assert.Throws<InvalidOperationException>(() => new FixedArrayPool<byte>(null).Rent(4, out Span<int> _));
+        Assert.Throws<InvalidOperationException>(() => new FixedArrayPool<byte>(new byte[15]).Rent(4, out Span<int> _));
+        var exact = new byte[16];
+        Assert.Same(exact, new FixedArrayPool<byte>(exact).Rent(4, out Span<int> span));
+        Assert.Equal(4, span.Length);
+    }
+
     [Fact]
     public void RentPassesEffectiveByteSizeToUnderlyingPool()
     {

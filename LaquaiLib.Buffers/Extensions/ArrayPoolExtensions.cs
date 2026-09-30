@@ -54,7 +54,10 @@ public static class ArrayPoolExtensions
                 throw new ArgumentOutOfRangeException(nameof(minimumSize), "The requested array size exceeds the maximum allowed length.");
 
             var arr = pool.Rent((int)effectiveSize);
-            span = MemoryMarshal.Cast<TSource, TAs>(arr.AsSpan());
+            if (arr is null || arr.Length < effectiveSize)
+                throw new InvalidOperationException("The pool returned an array shorter than requested.");
+            var usable = (int)Math.Min(arr.Length, (long)int.MaxValue * sizeof(TAs) / sizeof(TSource));
+            span = MemoryMarshal.Cast<TSource, TAs>(arr.AsSpan(0, usable));
             return arr;
         }
     }
