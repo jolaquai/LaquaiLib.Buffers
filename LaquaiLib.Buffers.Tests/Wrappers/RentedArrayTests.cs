@@ -29,6 +29,17 @@ public class RentedArrayTests
     }
 
     [Fact]
+    public void SpanCoversOffsetAndLengthOfTheArray()
+    {
+        var array = new[] { 0, 1, 2, 3, 4, 5 };
+        var rented = new RentedArray<int>(array, 2, 3, new RecordingArrayPool<int>());
+        Assert.Equal([2, 3, 4], rented.Span.ToArray());
+        rented.Span[0] = 42;
+        Assert.Equal(42, array[2]);
+        Assert.Equal([1, 42, 3, 4, 5], new RentedArray<int>(array, 1, arrayPool: new RecordingArrayPool<int>()).Span.ToArray());
+    }
+
+    [Fact]
     public void DisposeClearsReferenceTypeArrayEvenWhenClearIsFalse()
     {
         var pool = new RecordingArrayPool<string>();

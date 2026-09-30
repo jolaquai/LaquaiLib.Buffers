@@ -58,6 +58,22 @@ public class ArrayPoolMemoryStreamTests
         }
     }
 
+    // every Rent returns the same array, so a stream can claim gigabytes of capacity without allocating any
+    private sealed class SharedArrayPool : ArrayPool<byte>
+    {
+        private readonly byte[] _array = new byte[65536];
+        public override byte[] Rent(int minimumLength) => _array;
+        public override void Return(byte[] array, bool clearArray = false) { }
+    }
+
+    private sealed class ForeignAsyncResult : IAsyncResult
+    {
+        public object AsyncState => null;
+        public WaitHandle AsyncWaitHandle => null;
+        public bool CompletedSynchronously => true;
+        public bool IsCompleted => true;
+    }
+
     private static byte[] Sequence(int length)
     {
         var data = new byte[length];
@@ -981,7 +997,7 @@ public class ArrayPoolMemoryStreamTests
     {
         using var stream = new ArrayPoolMemoryStream();
         byte[] src = [0, 1, 2, 3, 0];
-        await stream.WriteAsync(src.AsMemory(1, 3), TestContext.Current.CancellationToken);
+        await stream.WriteAsync(src, 1, 3, TestContext.Current.CancellationToken);
         Assert.Equal(3L, stream.Length);
         stream.Position = 0;
         var buffer = new byte[3];
@@ -1003,8 +1019,94 @@ public class ArrayPoolMemoryStreamTests
     {
         using var stream = StreamWith(1, 2, 3);
         var buffer = new byte[5];
-        Assert.Equal(3, await stream.ReadAsync(buffer.AsMemory(1, 3), TestContext.Current.CancellationToken));
+        Assert.Equal(3, await stream.ReadAsync(buffer, 1, 3, TestContext.Current.CancellationToken));
         Assert.Equal(new byte[] { 0, 1, 2, 3, 0 }, buffer);
+    }
+
+    [Fact]
+    public void ReadSpanReturnsWrittenBytesAndAdvancesPosition()
+    {
+        using var stream = StreamWith(1, 2, 3, 4);
+        stream.Position = 1;
+        Span<byte> buffer = stackalloc byte[8];
+        Assert.Equal(3, stream.Read(buffer));
+        Assert.Equal(new byte[] { 2, 3, 4 }, buffer.Slice(0, 3).ToArray());
+        Assert.Equal(4L, stream.Position);
+        Assert.Equal(0, stream.Read(buffer));
+    }
+
+    [Fact]
+    public void BeginEndWriteAndReadRoundTrip()
+    {
+        using var stream = new ArrayPoolMemoryStream();
+        var state = new object();
+        object callbackState = null;
+        using var written = new ManualResetEventSlim();
+        var write = stream.BeginWrite([0, 1, 2, 3, 0], 1, 3, ar => { callbackState = ar.AsyncState; written.Set(); }, state);
+        stream.EndWrite(write);
+        Assert.True(written.Wait(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken));
+        Assert.Same(state, callbackState);
+        Assert.Equal(3L, stream.Length);
+
+        stream.Position = 0;
+        var buffer = new byte[5];
+        var read = stream.BeginRead(buffer, 1, 4, null, state);
+        Assert.Same(state, read.AsyncState);
+        Assert.Equal(3, stream.EndRead(read));
+        Assert.Equal(new byte[] { 0, 1, 2, 3, 0 }, buffer);
+    }
+
+    [Fact]
+    public void CopyToWithBufferSizeCopiesAcrossSegmentsFromPosition()
+    {
+        var data = Sequence(100);
+        var pool = new TrackingArrayPool();
+        using var stream = new ArrayPoolMemoryStream(16, pool: pool);
+        for (var i = 0; i < data.Length; i += 10)
+            stream.Write(data, i, 10);
+        Assert.True(pool.Rented.Count > 1);
+        stream.Position = 5;
+
+        using var target = new MemoryStream();
+        stream.CopyTo(target, 7);
+
+        Assert.Equal(data.Skip(5), target.ToArray());
+        Assert.Equal(100L, stream.Position);
+    }
+
+#if NETCOREAPP
+    [Fact]
+    public async Task DisposeAsyncReturnsSegmentsAndDisposes()
+    {
+        var pool = new TrackingArrayPool();
+        var stream = new ArrayPoolMemoryStream(16, pool: pool);
+        stream.Write(Sequence(40));
+
+        await stream.DisposeAsync();
+
+        Assert.Equal(pool.Rented, pool.Returns);
+        Assert.Throws<ObjectDisposedException>(() => stream.Length);
+    }
+#endif
+
+    [Fact]
+    public void GetSpanDropsAnEmptyTrailingSegmentTooShortForTheRun()
+    {
+        var pool = new TrackingArrayPool();
+        using var stream = new ArrayPoolMemoryStream(16, pool: pool);
+        stream.Write(Sequence(16), 0, 16);
+        stream.WriteByte(0);
+        stream.SetLength(16);
+        stream.Position = 16;
+        var shortTail = pool.Rented[1];
+
+        var span = stream.GetSpan(64);
+
+        Assert.True(span.Length >= 64);
+        Assert.Contains(shortTail, pool.Returns);
+        span.Slice(0, 4).Fill(0xAB);
+        stream.Advance(4);
+        Assert.Equal(Sequence(16).Concat(new byte[] { 0xAB, 0xAB, 0xAB, 0xAB }), stream.ToArray());
     }
 
     [Fact]
@@ -1066,7 +1168,7 @@ public class ArrayPoolMemoryStreamTests
     public async Task FlushAsyncCompletes()
     {
         using var stream = StreamWith(1, 2, 3);
-        await stream.FlushAsync();
+        await stream.FlushAsync(TestContext.Current.CancellationToken);
         Assert.Equal(3L, stream.Length);
     }
 
@@ -1264,7 +1366,7 @@ public class ArrayPoolMemoryStreamTests
     {
         using var stream = StreamWith(1, 2, 3);
         using var target = new MemoryStream(new byte[8], false);
-        Assert.Throws<NotSupportedException>(() => { _ = stream.CopyToAsync(target, 4096, default); });
+        Assert.Throws<NotSupportedException>(() => { _ = stream.CopyToAsync(target, 4096, TestContext.Current.CancellationToken); });
     }
 
     [Fact]
@@ -1323,7 +1425,7 @@ public class ArrayPoolMemoryStreamTests
 
         stream.Position = 0;
         using var target = new MemoryStream();
-        await stream.CopyToAsync(target);
+        await stream.CopyToAsync(target, 81920, TestContext.Current.CancellationToken);
         Assert.Equal(data, target.ToArray());
         Assert.Equal(1048L, stream.Position);
     }
@@ -1357,7 +1459,7 @@ public class ArrayPoolMemoryStreamTests
         using var stream = StreamWith(1, 2, 3);
         stream.Position = 3;
         using var target = new MemoryStream();
-        await stream.CopyToAsync(target);
+        await stream.CopyToAsync(target, 81920, TestContext.Current.CancellationToken);
         Assert.Empty(target.ToArray());
     }
 
@@ -1401,7 +1503,7 @@ public class ArrayPoolMemoryStreamTests
     public async Task ReadAsyncReusesTheCompletedTaskForRepeatedCounts()
     {
         using var stream = StreamWith(1, 2, 3, 4);
-        var first = stream.ReadAsync(new byte[2], 0, 2, default);
+        var first = stream.ReadAsync(new byte[2], 0, 2, TestContext.Current.CancellationToken);
         var second = stream.ReadAsync(new byte[2], 0, 2, TestContext.Current.CancellationToken);
         Assert.Same(first, second);
         Assert.Equal(2, await first);
@@ -1411,8 +1513,8 @@ public class ArrayPoolMemoryStreamTests
     public async Task ReadAsyncIssuesAFreshTaskWhenTheCountChanges()
     {
         using var stream = StreamWith(1, 2, 3);
-        var first = stream.ReadAsync(new byte[2], 0, 2, default);
-        var second = stream.ReadAsync(new byte[2], 0, 2, default);
+        var first = stream.ReadAsync(new byte[2], 0, 2, TestContext.Current.CancellationToken);
+        var second = stream.ReadAsync(new byte[2], 0, 2, TestContext.Current.CancellationToken);
         Assert.NotSame(first, second);
         Assert.Equal(2, await first);
         Assert.Equal(1, await second);
@@ -2754,5 +2856,49 @@ public class ArrayPoolMemoryStreamTests
         var buffer = new byte[oracle.Length];
         Assert.Equal(buffer.Length, stream.Read(buffer, 0, buffer.Length));
         Assert.Equal(oracle.ToArray(), buffer);
+    }
+
+    [Fact]
+    public void ToArrayThrowsWhenLengthExceedsSingleArray()
+    {
+        using var stream = new ArrayPoolMemoryStream(pool: new SharedArrayPool(), skipZeroing: true, disallowLohRenting: true);
+        stream.SetLength(Array.MaxLength + 1L);
+        Assert.Throws<OutOfMemoryException>(() => stream.ToArray());
+    }
+
+    [Fact]
+    public void GetSpanThrowsWhenContiguousRunCannotBeRented()
+    {
+        using var stream = new ArrayPoolMemoryStream(pool: new SharedArrayPool(), skipZeroing: true, disallowLohRenting: true);
+        stream.SetLength(1000);
+        stream.Position = 0;
+        Assert.Throws<OutOfMemoryException>(() => stream.GetSpan(int.MaxValue));
+    }
+
+    [Fact]
+    public void CopyToWithBufferSizeCopiesNothingAtEnd()
+    {
+        using var stream = StreamWith(Sequence(10));
+        stream.Position = stream.Length;
+        using var target = new MemoryStream();
+        stream.CopyTo(target, 4096);
+        Assert.Equal(0L, target.Length);
+        Assert.Equal(10L, stream.Position);
+    }
+
+    [Fact]
+    public void EndReadAndEndWriteRejectForeignAsyncResults()
+    {
+        using var stream = StreamWith(Sequence(4));
+        var write = stream.BeginWrite([1], 0, 1, null, null);
+        Assert.Throws<ArgumentException>(() => stream.EndRead(write));
+        stream.EndWrite(write);
+        var read = stream.BeginRead(new byte[2], 0, 2, null, null);
+        Assert.Throws<ArgumentException>(() => stream.EndRead(new ForeignAsyncResult()));
+        Assert.Throws<ArgumentException>(() => stream.EndWrite(new ForeignAsyncResult()));
+        Assert.Equal(2, stream.EndRead(read));
+        Assert.True(read.IsCompleted);
+        Assert.NotNull(read.AsyncWaitHandle);
+        Assert.True(read.AsyncWaitHandle.WaitOne(TimeSpan.FromSeconds(10)));
     }
 }

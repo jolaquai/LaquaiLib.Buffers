@@ -91,6 +91,26 @@ public class ArrayPoolExtensionsTests
     }
 
     [Fact]
+    public void ReturnSafeClearsBasedOnNullableUnderlyingType()
+    {
+        var plain = new RecordingArrayPool<int?>();
+        plain.ReturnSafe(new int?[4]);
+        Assert.False(plain.LastReturnedClearArray);
+
+        var withRefs = new RecordingArrayPool<StructWithReference?>();
+        withRefs.ReturnSafe(new StructWithReference?[4]);
+        Assert.True(withRefs.LastReturnedClearArray);
+    }
+
+    [Fact]
+    public void ReturnSafeDoesNotClearArrayForStructsOfValueTypes()
+    {
+        var pool = new RecordingArrayPool<ThreeInts>();
+        pool.ReturnSafe(new ThreeInts[4]);
+        Assert.False(pool.LastReturnedClearArray);
+    }
+
+    [Fact]
     public void ReturnSafeWorksWithSharedPool()
     {
         var array = ArrayPool<byte>.Shared.Rent(16);

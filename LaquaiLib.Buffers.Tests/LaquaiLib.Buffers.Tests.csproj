@@ -8,6 +8,7 @@
     <LangVersion>preview</LangVersion>
     <EnablePreviewFeatures>True</EnablePreviewFeatures>
     <IsPackable>false</IsPackable>
+    <NoWarn>$(NoWarn);CA2007;CS0649</NoWarn>
 
     <RootNamespace>LaquaiLib.Buffers.Tests</RootNamespace>
 
