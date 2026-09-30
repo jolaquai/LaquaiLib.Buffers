@@ -1,7 +1,6 @@
 namespace LaquaiLib.Buffers;
 
 #if !NETCOREAPP
-using System.Collections.Concurrent;
 using System.Reflection;
 
 internal static class ExceptionExtensions
@@ -32,24 +31,10 @@ internal static class ExceptionExtensions
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static void ThrowIfGreaterThanOrEqualTo<T>(T value, T maxValue, [CallerArgumentExpression(nameof(value))] string paramName = "") where T : IComparable<T>
-        {
-            if (value.CompareTo(maxValue) >= 0)
-                ThrowGreaterThanOrEqualTo(paramName, value, maxValue);
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static void ThrowIfLessThan<T>(T value, T minValue, [CallerArgumentExpression(nameof(value))] string paramName = "") where T : IComparable<T>
         {
             if (value.CompareTo(minValue) < 0)
                 ThrowLessThan(paramName, value, minValue);
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static void ThrowIfLessThanOrEqualTo<T>(T value, T minValue, [CallerArgumentExpression(nameof(value))] string paramName = "") where T : IComparable<T>
-        {
-            if (value.CompareTo(minValue) <= 0)
-                ThrowLessThanOrEqualTo(paramName, value, minValue);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -73,16 +58,8 @@ internal static class ExceptionExtensions
         throw new ArgumentOutOfRangeException(paramName, value, $"The value must be less than or equal to {maxValue}.");
 
     [MethodImpl(MethodImplOptions.NoInlining)]
-    private static void ThrowGreaterThanOrEqualTo<T>(string paramName, T value, T maxValue) =>
-        throw new ArgumentOutOfRangeException(paramName, value, $"The value must be less than {maxValue}.");
-
-    [MethodImpl(MethodImplOptions.NoInlining)]
     private static void ThrowLessThan<T>(string paramName, T value, T minValue) =>
         throw new ArgumentOutOfRangeException(paramName, value, $"The value must be greater than or equal to {minValue}.");
-
-    [MethodImpl(MethodImplOptions.NoInlining)]
-    private static void ThrowLessThanOrEqualTo<T>(string paramName, T value, T minValue) =>
-        throw new ArgumentOutOfRangeException(paramName, value, $"The value must be greater than {minValue}.");
 
     [MethodImpl(MethodImplOptions.NoInlining)]
     private static void ThrowNegative<T>(string paramName, T value) =>
@@ -130,8 +107,6 @@ internal static class RuntimeHelpersExtensions
     {
         public static readonly bool Value = ComputeHasRefs(typeof(T));
     }
-    private static readonly Func<Type, bool> _computeHasRefs = ComputeHasRefs;
-    private static readonly ConcurrentDictionary<Type, bool> _byType = [];
     private static bool ComputeHasRefs(Type type)
     {
         if (!type.IsValueType)
@@ -155,15 +130,12 @@ internal static class RuntimeHelpersExtensions
     {
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static bool IsReferenceOrContainsReferences<T>() => RefCheck<T>.Value;
-        public static bool IsReferenceOrContainsReferences(Type type) => _byType.GetOrAdd(type ?? throw new ArgumentNullException(nameof(type)), _computeHasRefs);
     }
 }
 internal static class CollectionsMarshal
 {
     public static Span<T> AsSpan<T>(List<T> list)
     {
-        if (list == null)
-            throw new ArgumentNullException(nameof(list));
         return ListAccessors<T>._items(list).AsSpan(0, list.Count);
     }
 }

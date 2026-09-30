@@ -765,7 +765,7 @@ public sealed class ArrayPoolMemoryStream : Stream, IBufferWriter<byte>
         }
 
         // EnsureCapacity already rented the tail, and the segment that now starts at the head usually covers the run on its own
-        if (head < _segments.Count && _segments[head].Length >= sizeHint)
+        if (_segments[head].Length >= sizeHint)
             return _segments[head];
 
         // it does not, and nothing from the head on holds anything, so it can all go back
@@ -774,8 +774,7 @@ public sealed class ArrayPoolMemoryStream : Stream, IBufferWriter<byte>
             capacity -= _segments[i].Length;
             _pool.Return(_segments[i].Array);
         }
-        if (head < _segments.Count)
-            _segments.RemoveRange(head, _segments.Count - head);
+        _segments.RemoveRange(head, _segments.Count - head);
 
         // _minimumSegmentSize is capped at _maxSegmentSize by the constructor, so this exceeds the cap only when the caller asks for more than a capped segment could ever hold
         var arr = _pool.Rent(Math.Max(sizeHint, _minimumSegmentSize));

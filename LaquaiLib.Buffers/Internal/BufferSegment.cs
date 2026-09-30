@@ -28,14 +28,6 @@ internal readonly struct BufferSegment<T>(T[] array, int length)
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         get => Array.AsSpan(0, Length);
     }
-    /// <summary>
-    /// Gets a <see cref="Memory{T}"/> over the addressed portion of this segment.
-    /// </summary>
-    public Memory<T> Memory
-    {
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        get => Array.AsMemory(0, Length);
-    }
 
     /// <summary>
     /// Creates a segment addressing the entirety of <paramref name="array"/>.
