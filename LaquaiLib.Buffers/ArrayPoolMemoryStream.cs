@@ -6,7 +6,7 @@ using LaquaiLib.Buffers.Internal;
 namespace LaquaiLib.Buffers;
 
 /// <summary>
-/// Implements a <see cref="Stream"/> whose backing memory is source from an <see cref="ArrayPool{T}"/>.
+/// Implements a <see cref="Stream"/> whose backing memory is sourced from an <see cref="ArrayPool{T}"/>.
 /// </summary>
 /// <remarks>
 /// This is by no means meant to replace an implementation such as <see href="https://github.com/microsoft/Microsoft.IO.RecyclableMemoryStream"/>. This type's design is much simpler.
@@ -31,6 +31,7 @@ public sealed class ArrayPoolMemoryStream : Stream, IBufferWriter<byte>
     private readonly int _minimumSegmentSize;
     private readonly int _maxSegmentSize;
     private readonly bool _skipZeroing;
+    private readonly bool _clearOnReturn;
 
     private CachedInt32Task _lastReadTask;
     private long position, length, capacity;
@@ -46,7 +47,8 @@ public sealed class ArrayPoolMemoryStream : Stream, IBufferWriter<byte>
     /// <param name="skipZeroing">If <see langword="true"/>, memory exposed by seeking or <see cref="SetLength(long)"/> past the current length is not zeroed and may contain arbitrary prior contents. Only set this if all such memory is overwritten before being read.</param>
     /// <param name="pool">The <see cref="ArrayPool{T}"/> to rent segments from, or <see langword="null"/> to use <see cref="ArrayPool{T}.Shared"/>.</param>
     /// <param name="disallowLohRenting">If <see langword="true"/>, no single segment is rented larger than 65536 bytes. This is rarely worth setting: an array on the Large Object Heap that the pool holds costs nothing in GC pressure, and <see cref="ArrayPool{T}.Shared"/> already refuses to pool anything above 1 MiB, so that is the effective cap whenever no custom <paramref name="pool"/> is supplied. Every <see cref="Stream"/> member honours this, as does appending through <see cref="GetMemory(int)"/>/<see cref="GetSpan(int)"/>. The one exception is asking those two for a run that starts before <see cref="Length"/> and crosses a segment boundary: the run has to be contiguous and has to start at <see cref="Position"/>, and ending a segment early to arrange that would renumber the data stored past it, so the segments are merged into a single rent that may exceed the cap. A <c>sizeHint</c> smaller than the cap is enough to trigger it; only its reaching past the end of the segment <see cref="Position"/> sits in matters.</param>
-    public ArrayPoolMemoryStream(int minimumSegmentSize = 2048, long capacity = 0, bool skipZeroing = false, ArrayPool<byte> pool = null, bool disallowLohRenting = false)
+    /// <param name="clearOnReturn">If <see langword="true"/>, segments are zeroed before being returned to the pool, so stream contents cannot leak to the pool's next renter.</param>
+    public ArrayPoolMemoryStream(int minimumSegmentSize = 2048, long capacity = 0, bool skipZeroing = false, ArrayPool<byte> pool = null, bool disallowLohRenting = false, bool clearOnReturn = false)
     {
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(minimumSegmentSize);
         ArgumentOutOfRangeException.ThrowIfNegative(capacity, nameof(capacity));
@@ -64,6 +66,7 @@ public sealed class ArrayPoolMemoryStream : Stream, IBufferWriter<byte>
 
         _minimumSegmentSize = minimumSegmentSize;
         _skipZeroing = skipZeroing;
+        _clearOnReturn = clearOnReturn;
         _pool = pool ?? ArrayPool<byte>.Shared;
 
         EnsureCapacity(capacity);
@@ -490,14 +493,16 @@ public sealed class ArrayPoolMemoryStream : Stream, IBufferWriter<byte>
     public override long Seek(long offset, SeekOrigin origin)
     {
         ThrowIfDisposed();
-        Position = origin switch
+        var target = origin switch
         {
             SeekOrigin.Begin => offset,
             SeekOrigin.Current => position + offset,
             SeekOrigin.End => length + offset,
             _ => throw new ArgumentOutOfRangeException(nameof(origin), origin, "Invalid seek origin."),
         };
-        return position;
+        if (target < 0)
+            throw new IOException("An attempt was made to move the position before the beginning of the stream.");
+        return position = target;
     }
     /// <inheritdoc/>
     public override void SetLength(long value)
@@ -535,7 +540,7 @@ public sealed class ArrayPoolMemoryStream : Stream, IBufferWriter<byte>
         }
 
         for (var i = keep; i < _segments.Count; i++)
-            _pool.Return(_segments[i].Array);
+            _pool.ReturnSafe(_segments[i].Array, _clearOnReturn);
         _segments.RemoveRange(keep, _segments.Count - keep);
         capacity = kept;
     }
@@ -558,7 +563,7 @@ public sealed class ArrayPoolMemoryStream : Stream, IBufferWriter<byte>
             if (Volatile.Read(ref _asyncInFlight) == 0)
             {
                 foreach (var segment in _segments)
-                    _pool.Return(segment.Array);
+                    _pool.ReturnSafe(segment.Array, _clearOnReturn);
             }
             _segments.Clear();
 
@@ -753,7 +758,7 @@ public sealed class ArrayPoolMemoryStream : Stream, IBufferWriter<byte>
         {
             // the segment would address nothing at all, so it is dropped rather than left behind as a zero-length hole
             capacity -= current.Length;
-            _pool.Return(current.Array);
+            _pool.ReturnSafe(current.Array, _clearOnReturn);
             _segments.RemoveAt(head);
         }
         else
@@ -772,7 +777,7 @@ public sealed class ArrayPoolMemoryStream : Stream, IBufferWriter<byte>
         for (var i = head; i < _segments.Count; i++)
         {
             capacity -= _segments[i].Length;
-            _pool.Return(_segments[i].Array);
+            _pool.ReturnSafe(_segments[i].Array, _clearOnReturn);
         }
         _segments.RemoveRange(head, _segments.Count - head);
 
@@ -800,7 +805,7 @@ public sealed class ArrayPoolMemoryStream : Stream, IBufferWriter<byte>
             var current = segments[i];
             current.Span.CopyTo(buffer.AsSpan(copied));
             copied += current.Length;
-            _pool.Return(current.Array);
+            _pool.ReturnSafe(current.Array, _clearOnReturn);
         }
 
         // the pool's rounding surplus can only be addressed when the merge ran to the very end, since anywhere else it would shift every following segment

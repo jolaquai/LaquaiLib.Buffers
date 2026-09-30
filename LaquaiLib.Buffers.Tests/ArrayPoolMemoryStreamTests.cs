@@ -655,7 +655,30 @@ public class ArrayPoolMemoryStreamTests
     public void SeekToNegativePositionThrows()
     {
         using var stream = StreamWith(1, 2, 3);
-        Assert.Throws<ArgumentOutOfRangeException>(() => stream.Seek(-1, SeekOrigin.Begin));
+        stream.Position = 2;
+        Assert.Throws<IOException>(() => stream.Seek(-1, SeekOrigin.Begin));
+        Assert.Throws<IOException>(() => stream.Seek(-3, SeekOrigin.Current));
+        Assert.Throws<IOException>(() => stream.Seek(-4, SeekOrigin.End));
+        Assert.Equal(2, stream.Position);
+        Assert.Equal(0, stream.Seek(-3, SeekOrigin.End));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void ClearOnReturnZeroesReturnedSegments(bool clearOnReturn)
+    {
+        var pool = new TrackingArrayPool();
+        var stream = new ArrayPoolMemoryStream(16, pool: pool, clearOnReturn: clearOnReturn);
+        for (var i = 0; i < 4; i++)
+            stream.Write(Enumerable.Repeat((byte)0xAB, 16).ToArray(), 0, 16);
+        stream.SetLength(16);
+        stream.TrimExcess();
+        Assert.Equal(3, pool.Returns.Count);
+        stream.Dispose();
+
+        Assert.Equal(4, pool.Returns.Count);
+        Assert.All(pool.Returns, returned => Assert.Equal(clearOnReturn, Array.TrueForAll(returned, static b => b == 0)));
     }
 
     [Fact]
