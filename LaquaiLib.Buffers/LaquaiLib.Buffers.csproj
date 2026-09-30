@@ -10,7 +10,6 @@
 
   <PropertyGroup>
     <LangVersion>preview</LangVersion>
-    <RollForward>LatestMajor</RollForward>
     <DebugType>portable</DebugType>
     <DebugSymbols>True</DebugSymbols>
     <GeneratePackageOnBuild Condition="'$(Configuration)' == 'Release'">True</GeneratePackageOnBuild>
@@ -30,6 +29,7 @@
 
     <RepositoryType>git</RepositoryType>
     <RepositoryUrl>https://github.com/jolaquai/$(AssemblyName)</RepositoryUrl>
+    <PackageProjectUrl>$(RepositoryUrl)</PackageProjectUrl>
   </PropertyGroup>
 
   <ItemGroup>
@@ -45,7 +45,7 @@
 
   <ItemGroup Condition="'$(TargetFramework)' == 'netstandard2.0'">
       <PackageReference Include="System.Memory" Version="4.6.3" />
-      <PackageReference Include="PolySharp" Version="1.16.0" />
+      <PackageReference Include="PolySharp" Version="1.16.0" PrivateAssets="all" />
   </ItemGroup>
 
 </Project>
