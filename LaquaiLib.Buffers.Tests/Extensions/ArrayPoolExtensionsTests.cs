@@ -352,6 +352,16 @@ public class ArrayPoolExtensionsTests
         Assert.Equal(4, span.Length);
     }
 
+#if NETCOREAPP
+    [Fact(Explicit = true)]
+    public void RentCapsSpanLengthForHugeArrays()
+    {
+        var huge = GC.AllocateUninitializedArray<long>(268_435_456);
+        Assert.Same(huge, new FixedArrayPool<long>(huge).Rent(1, out Span<byte> span));
+        Assert.Equal(268_435_455 * 8, span.Length);
+    }
+#endif
+
     [Fact]
     public void RentPassesEffectiveByteSizeToUnderlyingPool()
     {
