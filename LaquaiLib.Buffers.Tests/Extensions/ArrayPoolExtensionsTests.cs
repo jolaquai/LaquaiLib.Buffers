@@ -25,7 +25,7 @@ public class ArrayPoolExtensionsTests
         public T[] LastRentedArray;
         public int? LastRentMinimumLength;
         public T[] LastReturnedArray;
-        public bool? LastReturnedClearArray;
+        public bool? LastReturnedCleared;
         public bool ReturnWasCalled;
 
         public override T[] Rent(int minimumLength)
@@ -39,8 +39,15 @@ public class ArrayPoolExtensionsTests
         {
             ReturnWasCalled = true;
             LastReturnedArray = array;
-            LastReturnedClearArray = clearArray;
+            LastReturnedCleared = Array.TrueForAll(array, static x => EqualityComparer<T>.Default.Equals(x, default));
         }
+    }
+
+    private static T[] Filled<T>(T value)
+    {
+        var array = new T[4];
+        array.AsSpan().Fill(value);
+        return array;
     }
 
     [Fact]
@@ -57,57 +64,65 @@ public class ArrayPoolExtensionsTests
     public void ReturnSafeClearsArrayForReferenceTypeElements()
     {
         var pool = new RecordingArrayPool<string>();
-        var array = new string[4];
+        var array = Filled("x");
 
         pool.ReturnSafe(array);
 
         Assert.True(pool.ReturnWasCalled);
         Assert.Same(array, pool.LastReturnedArray);
-        Assert.True(pool.LastReturnedClearArray);
+        Assert.True(pool.LastReturnedCleared);
     }
 
     [Fact]
     public void ReturnSafeClearsArrayForStructsContainingReferences()
     {
         var pool = new RecordingArrayPool<StructWithReference>();
-        var array = new StructWithReference[4];
 
-        pool.ReturnSafe(array);
+        pool.ReturnSafe(Filled(new StructWithReference { A = 1, S = "x" }));
 
         Assert.True(pool.ReturnWasCalled);
-        Assert.True(pool.LastReturnedClearArray);
+        Assert.True(pool.LastReturnedCleared);
     }
 
     [Fact]
     public void ReturnSafeDoesNotClearArrayForPureValueTypeElements()
     {
         var pool = new RecordingArrayPool<int>();
-        var array = new int[4];
 
-        pool.ReturnSafe(array);
+        pool.ReturnSafe(Filled(7));
 
         Assert.True(pool.ReturnWasCalled);
-        Assert.False(pool.LastReturnedClearArray);
+        Assert.False(pool.LastReturnedCleared);
+    }
+
+    [Fact]
+    public void ReturnSafeClearsPureValueTypeArrayWhenRequested()
+    {
+        var pool = new RecordingArrayPool<int>();
+
+        pool.ReturnSafe(Filled(7), clearArray: true);
+
+        Assert.True(pool.LastReturnedCleared);
     }
 
     [Fact]
     public void ReturnSafeClearsBasedOnNullableUnderlyingType()
     {
         var plain = new RecordingArrayPool<int?>();
-        plain.ReturnSafe(new int?[4]);
-        Assert.False(plain.LastReturnedClearArray);
+        plain.ReturnSafe(Filled<int?>(7));
+        Assert.False(plain.LastReturnedCleared);
 
         var withRefs = new RecordingArrayPool<StructWithReference?>();
-        withRefs.ReturnSafe(new StructWithReference?[4]);
-        Assert.True(withRefs.LastReturnedClearArray);
+        withRefs.ReturnSafe(Filled<StructWithReference?>(new StructWithReference { S = "x" }));
+        Assert.True(withRefs.LastReturnedCleared);
     }
 
     [Fact]
     public void ReturnSafeDoesNotClearArrayForStructsOfValueTypes()
     {
         var pool = new RecordingArrayPool<ThreeInts>();
-        pool.ReturnSafe(new ThreeInts[4]);
-        Assert.False(pool.LastReturnedClearArray);
+        pool.ReturnSafe(Filled(new ThreeInts { A = 1, B = 2, C = 3 }));
+        Assert.False(pool.LastReturnedCleared);
     }
 
     [Fact]
@@ -309,9 +324,17 @@ public class ArrayPoolExtensionsTests
     public void RentThrowsForNegativeMinimumSize()
         => Assert.Throws<ArgumentOutOfRangeException>(() => ArrayPool<byte>.Shared.Rent<byte, byte>(-1, out _));
 
-    [Fact]
-    public void RentThrowsWhenElementSizeMultiplicationOverflows()
-        => Assert.Throws<ArgumentOutOfRangeException>(() => ArrayPool<byte>.Shared.Rent<byte, Guid>(200_000_000, out _));
+    [Theory]
+    [InlineData(200_000_000)]
+    [InlineData(0x1000_0001)]
+    [InlineData(int.MaxValue)]
+    public void RentThrowsWhenElementSizeMultiplicationOverflows(int minimumSize)
+    {
+        var pool = new RecordingArrayPool<byte>();
+        var ex = Assert.Throws<ArgumentOutOfRangeException>(() => pool.Rent<byte, Guid>(minimumSize, out _));
+        Assert.Equal("minimumSize", ex.ParamName);
+        Assert.Null(pool.LastRentMinimumLength);
+    }
 
     [Fact]
     public void RentPassesEffectiveByteSizeToUnderlyingPool()

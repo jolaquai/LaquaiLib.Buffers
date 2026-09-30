@@ -10,16 +10,19 @@ public static class ArrayPoolExtensions
     extension<T>(ArrayPool<T> pool)
     {
         /// <summary>
-        /// Returns <paramref name="array"/> to <paramref name="pool"/>, ensuring it is cleared if <typeparamref name="T"/> is a reference type or contains references.
+        /// Returns <paramref name="array"/> to <paramref name="pool"/>, clearing it first if <paramref name="clearArray"/> is <see langword="true"/> or <typeparamref name="T"/> is a reference type or contains references.
+        /// Does nothing if <paramref name="array"/> is <see langword="null"/>.
         /// </summary>
         /// <param name="array">The array to return to the pool.</param>
-        public void ReturnSafe(T[] array)
+        /// <param name="clearArray">Whether to clear the array even if <typeparamref name="T"/> holds no references.</param>
+        public void ReturnSafe(T[] array, bool clearArray = false)
         {
             if (array is null)
                 return;
 
-            var refs = RuntimeHelpers.IsReferenceOrContainsReferences<T>();
-            pool.Return(array, refs);
+            if (clearArray || RuntimeHelpers.IsReferenceOrContainsReferences<T>())
+                array.AsSpan().ZeroMemory();
+            pool.Return(array);
         }
     }
 
@@ -45,15 +48,13 @@ public static class ArrayPoolExtensions
             if (minimumSize < 0)
                 throw new ArgumentOutOfRangeException(nameof(minimumSize), "The requested size must be non-negative.");
 
-            var effectiveSizeBytes = sizeof(TAs) * minimumSize;
+            var effectiveSizeBytes = (long)sizeof(TAs) * minimumSize;
             var effectiveSize = (effectiveSizeBytes + sizeof(TSource) - 1) / sizeof(TSource);
             if (effectiveSize > Array.MaxLength)
                 throw new ArgumentOutOfRangeException(nameof(minimumSize), "The requested array size exceeds the maximum allowed length.");
 
-            var arr = pool.Rent(effectiveSize);
-            // fit as many TAs's as possible into the rented TSource array
-            var fit = arr.Length * sizeof(TSource) / sizeof(TAs);
-            span = MemoryMarshal.Cast<TSource, TAs>(arr.AsSpan())[..fit];
+            var arr = pool.Rent((int)effectiveSize);
+            span = MemoryMarshal.Cast<TSource, TAs>(arr.AsSpan());
             return arr;
         }
     }

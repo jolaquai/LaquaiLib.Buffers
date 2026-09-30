@@ -1,5 +1,5 @@
 ﻿using System.Buffers;
-using System.Runtime.CompilerServices;
+using LaquaiLib.Buffers.Extensions;
 
 namespace LaquaiLib.Buffers.Wrappers;
 
@@ -48,7 +48,7 @@ public struct RentedArray<T>(T[] array, int offset = 0, int length = -1, ArrayPo
     {
         if (Array is T[] array)
         {
-            ArrayPool.Return(array, Clear || RuntimeHelpers.IsReferenceOrContainsReferences<T>());
+            ArrayPool.ReturnSafe(array, Clear);
             Array = null;
         }
     }

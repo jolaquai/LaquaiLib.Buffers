@@ -15,7 +15,7 @@ public class RentedArrayTests
     private sealed class RecordingArrayPool<T> : ArrayPool<T>
     {
         public T[] LastReturnedArray;
-        public bool? LastReturnedClearArray;
+        public bool? LastReturnedCleared;
         public bool ReturnWasCalled;
 
         public override T[] Rent(int minimumLength) => new T[minimumLength];
@@ -24,8 +24,15 @@ public class RentedArrayTests
         {
             ReturnWasCalled = true;
             LastReturnedArray = array;
-            LastReturnedClearArray = clearArray;
+            LastReturnedCleared = Array.TrueForAll(array, static x => EqualityComparer<T>.Default.Equals(x, default));
         }
+    }
+
+    private static T[] Filled<T>(T value)
+    {
+        var array = new T[4];
+        array.AsSpan().Fill(value);
+        return array;
     }
 
     [Fact]
@@ -43,48 +50,49 @@ public class RentedArrayTests
     public void DisposeClearsReferenceTypeArrayEvenWhenClearIsFalse()
     {
         var pool = new RecordingArrayPool<string>();
-        var rented = new RentedArray<string>(new string[4], arrayPool: pool, clear: false);
+        var rented = new RentedArray<string>(Filled("x"), arrayPool: pool, clear: false);
 
         rented.Dispose();
 
         Assert.True(pool.ReturnWasCalled);
-        Assert.True(pool.LastReturnedClearArray);
+        Assert.True(pool.LastReturnedCleared);
+        Assert.Null(rented.Array);
     }
 
     [Fact]
     public void DisposeClearsStructContainingReferenceEvenWhenClearIsFalse()
     {
         var pool = new RecordingArrayPool<StructWithReference>();
-        var rented = new RentedArray<StructWithReference>(new StructWithReference[4], arrayPool: pool, clear: false);
+        var rented = new RentedArray<StructWithReference>(Filled(new StructWithReference { A = 1, S = "x" }), arrayPool: pool, clear: false);
 
         rented.Dispose();
 
         Assert.True(pool.ReturnWasCalled);
-        Assert.True(pool.LastReturnedClearArray);
+        Assert.True(pool.LastReturnedCleared);
     }
 
     [Fact]
     public void DisposeDoesNotClearPureValueTypeArrayWhenClearIsFalse()
     {
         var pool = new RecordingArrayPool<int>();
-        var rented = new RentedArray<int>(new int[4], arrayPool: pool, clear: false);
+        var rented = new RentedArray<int>(Filled(7), arrayPool: pool, clear: false);
 
         rented.Dispose();
 
         Assert.True(pool.ReturnWasCalled);
-        Assert.False(pool.LastReturnedClearArray);
+        Assert.False(pool.LastReturnedCleared);
     }
 
     [Fact]
     public void DisposeClearsPureValueTypeArrayWhenClearIsTrue()
     {
         var pool = new RecordingArrayPool<int>();
-        var rented = new RentedArray<int>(new int[4], arrayPool: pool, clear: true);
+        var rented = new RentedArray<int>(Filled(7), arrayPool: pool, clear: true);
 
         rented.Dispose();
 
         Assert.True(pool.ReturnWasCalled);
-        Assert.True(pool.LastReturnedClearArray);
+        Assert.True(pool.LastReturnedCleared);
     }
 
     [Fact]
