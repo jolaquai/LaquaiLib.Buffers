@@ -37,7 +37,7 @@ public struct RentedArray<T>(T[] array, int offset = 0, int length = -1, ArrayPo
     public readonly bool Clear = clear;
 
     /// <summary>
-    /// Gets a <see cref="Memory{T}{T}"/> representing the portion of the array defined by the <see cref="Offset"/> and <see cref="Length"/>.
+    /// Gets a <see cref="Memory{T}"/> representing the portion of the array defined by the <see cref="Offset"/> and <see cref="Length"/>.
     /// </summary>
     public readonly Memory<T> Memory => Array.AsMemory(Offset, Length);
     /// <summary>
